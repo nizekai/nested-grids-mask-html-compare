@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>嵌套网格 Nested Grids & 物理遮罩 Mask 滑动演示</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #0d1117;
+    color: #c9d1d9;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+  /* ---- Left: Canvas ---- */
+  #canvas-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    min-width: 0;
+  }
+  #canvas-wrap h2 {
+    color: #58a6ff;
+    margin-bottom: 8px;
+    font-size: 15px;
+    letter-spacing: 1px;
+  }
+  canvas {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+  }
+  /* ---- Right: Panel ---- */
+  #panel {
+    width: 420px;
+    min-width: 380px;
+    background: #161b22;
+    border-left: 1px solid #30363d;
+    padding: 20px 18px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  #panel h2 {
+    color: #58a6ff;
+    font-size: 16px;
+    border-bottom: 1px solid #30363d;
+    padding-bottom: 8px;
+  }
+  .ctrl-group { display: flex; flex-direction: column; gap: 4px; }
+  .ctrl-group label {
+    font-size: 13px;
+    color: #8b949e;
+    display: flex;
+    justify-content: space-between;
+  }
+  .ctrl-group label span { color: #79c0ff; font-weight: 600; }
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 6px;
+    background: #30363d;
+    border-radius: 3px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    background: #58a6ff;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .play-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .play-row button {
+    background: #238636;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .play-row button:hover { background: #2ea043; }
+  .play-row button.stop { background: #da3633; }
+  .play-row button.stop:hover { background: #f85149; }
+  #stepLabel {
+    font-size: 12px;
+    color: #8b949e;
+  }
+  /* Info cards */
+  .info-card {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .info-card h3 {
+    font-size: 14px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .layer-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  table.info-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  table.info-table th {
+    text-align: left;
+    color: #8b949e;
+    font-weight: 500;
+    padding: 3px 4px;
+    border-bottom: 1px solid #21262d;
+  }
+  table.info-table td {
+    padding: 3px 4px;
+    color: #c9d1d9;
+    border-bottom: 1px solid #21262d;
+  }
+  table.info-table td.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: #79c0ff;
+    font-weight: 600;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 12px;
+    color: #8b949e;
+    padding: 6px 0;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+  .mask-pos-info {
+    font-size: 12px;
+    color: #8b949e;
+    line-height: 1.6;
+  }
+  .mask-pos-info b { color: #f0883e; }
+  .speed-ctrl { font-size: 12px; color: #8b949e; }
+</style>
+</head>
+<body>
+
+<div id="canvas-wrap">
+  <h2>物理空间视图 — 嵌套网格 & Mask 窗口</h2>
+  <canvas id="cv"></canvas>
+</div>
+
+<div id="panel">
+  <h2>🎛 参数控制面板</h2>
+
+  <!-- N slider -->
+  <div class="ctrl-group">
+    <label>Mask 尺寸 N (L4 cells) <span id="valN">11</span></label>
+    <input type="range" id="sliderN" min="3" max="61" step="2" value="11">
+  </div>
+
+  <!-- D slider -->
+  <div class="ctrl-group">
+    <label>滑动步长 D (L4 cells) <span id="valD">5</span></label>
+    <input type="range" id="sliderD" min="1" max="30" step="1" value="5">
+  </div>
+
+  <!-- Progress / step -->
+  <div class="ctrl-group">
+    <label>滑动进度 <span id="stepLabel">0 / 0</span></label>
+    <input type="range" id="sliderStep" min="0" max="0" step="1" value="0">
+  </div>
+
+  <!-- Play controls -->
+  <div class="play-row">
+    <button id="btnPlay">▶ 播放</button>
+    <button id="btnReset" class="stop">↺ 重置</button>
+  </div>
+  <div class="ctrl-group speed-ctrl">
+    <label>播放速度 <span id="valSpeed">5</span> 步/秒</label>
+    <input type="range" id="sliderSpeed" min="1" max="30" step="1" value="5">
+  </div>
+
+  <!-- Mask position info -->
+  <div class="info-card">
+    <h3>📍 Mask 当前位置 (L4 坐标)</h3>
+    <div id="maskPosInfo" class="mask-pos-info">—</div>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:#f7768e"></div>L1</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#ff9e64"></div>L2</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#e0af68"></div>L3</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#9ece6a"></div>L4</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:rgba(88,166,255,0.35);border-color:#58a6ff"></div>Mask</div>
+  </div>
+
+  <!-- Per-layer coverage -->
+  <div class="info-card">
+    <h3><span class="layer-dot" style="background:#9ece6a"></span> L4 覆盖详情</h3>
+    <table class="info-table">
+      <tr><th>项目</th><th style="text-align:right">值</th></tr>
+      <tr><td>Cell 范围 (行)</td><td class="num" id="l4Rows">—</td></tr>
+      <tr><td>Cell 范围 (列)</td><td class="num" id="l4Cols">—</td></tr>
+      <tr><td>覆盖 Cell 数</td><td class="num" id="l4Count">—</td></tr>
+    </table>
+  </div>
+
+  <div class="info-card">
+    <h3><span class="layer-dot" style="background:#e0af68"></span> L3 覆盖详情</h3>
+    <table class="info-table">
+      <tr><th>项目</th><th style="text-align:right">值</th></tr>
+      <tr><td>物理 dx 比值 (vs L4)</td><td class="num">×0.5</td></tr>
+      <tr><td>Cell 范围 (行)</td><td class="num" id="l3Rows">—</td></tr>
+      <tr><td>Cell 范围 (列)</td><td class="num" id="l3Cols">—</td></tr>
+      <tr><td>覆盖 Cell 数</td><td class="num" id="l3Count">—</td></tr>
+    </table>
+  </div>
+
+  <div class="info-card">
+    <h3><span class="layer-dot" style="background:#ff9e64"></span> L2 覆盖详情</h3>
+    <table class="info-table">
+      <tr><th>项目</th><th style="text-align:right">值</th></tr>
+      <tr><td>物理 dx 比值 (vs L4)</td><td class="num">×0.25</td></tr>
+      <tr><td>Cell 范围 (行)</td><td class="num" id="l2Rows">—</td></tr>
+      <tr><td>Cell 范围 (列)</td><td class="num" id="l2Cols">—</td></tr>
+      <tr><td>覆盖 Cell 数</td><td class="num" id="l2Count">—</td></tr>
+    </table>
+  </div>
+
+  <div class="info-card">
+    <h3><span class="layer-dot" style="background:#f7768e"></span> L1 覆盖详情</h3>
+    <table class="info-table">
+      <tr><th>项目</th><th style="text-align:right">值</th></tr>
+      <tr><td>物理 dx 比值 (vs L4)</td><td class="num">×0.125</td></tr>
+      <tr><td>Cell 范围 (行)</td><td class="num" id="l1Rows">—</td></tr>
+      <tr><td>Cell 范围 (列)</td><td class="num" id="l1Cols">—</td></tr>
+      <tr><td>覆盖 Cell 数</td><td class="num" id="l1Count">—</td></tr>
+    </table>
+  </div>
+
+  <!-- Summary -->
+  <div class="info-card">
+    <h3>📊 各层覆盖汇总</h3>
+    <table class="info-table" id="summaryTable">
+      <tr><th>层</th><th style="text-align:right">覆盖数</th><th style="text-align:right">总 Cell</th><th style="text-align:right">占比</th></tr>
+      <tr><td>L4</td><td class="num" id="s4c">—</td><td class="num">14641</td><td class="num" id="s4p">—</td></tr>
+      <tr><td>L3</td><td class="num" id="s3c">—</td><td class="num">14641</td><td class="num" id="s3p">—</td></tr>
+      <tr><td>L2</td><td class="num" id="s2c">—</td><td class="num">14641</td><td class="num" id="s2p">—</td></tr>
+      <tr><td>L1</td><td class="num" id="s1c">—</td><td class="num">14641</td><td class="num" id="s1p">—</td></tr>
+    </table>
+  </div>
+</div>
+
+<script>
+// ===== Physical Model =====
+// All 4 layers share the same center, each with 121x121 cells.
+// L4 has the coarsest resolution (dx4). L3 = dx4/2, L2 = dx4/4, L1 = dx4/8.
+// We normalize: dx4 = 1. So each layer's physical extent = 121 * dx_layer.
+// Physical center = 0,0 for all layers.
+
+const CELLS = 121; // per dimension per layer
+const HALF = (CELLS - 1) / 2; // 60
+
+// dx relative to L4
+const DX = { L4: 1, L3: 0.5, L2: 0.25, L1: 0.125 };
+// Physical half-extent of each layer
+const EXTENT = {
+  L4: CELLS * DX.L4 / 2,   // 60.5
+  L3: CELLS * DX.L3 / 2,   // 30.25
+  L2: CELLS * DX.L2 / 2,   // 15.125
+  L1: CELLS * DX.L1 / 2    // 7.5625
+};
+
+const COLORS = {
+  L1: '#f7768e',
+  L2: '#ff9e64',
+  L3: '#e0af68',
+  L4: '#9ece6a'
+};
+
+// ===== Canvas Setup =====
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W, H, scale, ox, oy;
+
+function resizeCanvas() {
+  const wrap = document.getElementById('canvas-wrap');
+  const w = wrap.clientWidth - 32;
+  const h = wrap.clientHeight - 60;
+  const s = Math.min(w, h);
+  cv.width = s * devicePixelRatio;
+  cv.height = s * devicePixelRatio;
+  cv.style.width = s + 'px';
+  cv.style.height = s + 'px';
+  W = cv.width;
+  H = cv.height;
+  // Physical range to show: slightly larger than L4
+  const physRange = EXTENT.L4 * 2 * 1.08;
+  scale = W / physRange;
+  ox = W / 2;
+  oy = H / 2;
+}
+
+function px(phys) { return phys * scale; }
+function sx(physX) { return ox + physX * scale; }
+function sy(physY) { return oy + physY * scale; }
+
+// ===== Drawing =====
+function drawGrid(layerKey, alpha) {
+  const dx = DX[layerKey];
+  const ext = EXTENT[layerKey];
+  const color = COLORS[layerKey];
+
+  // Draw boundary rect
+  ctx.strokeStyle = color;
+  ctx.lineWidth = devicePixelRatio * 2;
+  ctx.globalAlpha = 0.9;
+  const x0 = sx(-ext);
+  const y0 = sy(-ext);
+  const sz = px(ext * 2);
+  ctx.strokeRect(x0, y0, sz, sz);
+
+  // Draw grid lines (only if they won't be too dense)
+  const cellPx = px(dx);
+  if (cellPx > 3) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = devicePixelRatio * 0.5;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    for (let i = 0; i <= CELLS; i++) {
+      const p = -ext + i * dx;
+      const sp = sx(p);
+      ctx.moveTo(sp, y0);
+      ctx.lineTo(sp, y0 + sz);
+      const sq = sy(p);
+      ctx.moveTo(x0, sq);
+      ctx.lineTo(x0 + sz, sq);
+    }
+    ctx.stroke();
+  }
+
+  // Layer label
+  ctx.globalAlpha = 1;
+  ctx.font = `bold ${12 * devicePixelRatio}px sans-serif`;
+  ctx.fillStyle = color;
+  ctx.fillText(layerKey, x0 + 4 * devicePixelRatio, y0 + 14 * devicePixelRatio);
+}
+
+function drawMask(N, maskRow, maskCol) {
+  const dx4 = DX.L4;
+  const ext4 = EXTENT.L4;
+  // Mask physical origin (top-left corner)
+  const physX0 = -ext4 + maskCol * dx4;
+  const physY0 = -ext4 + maskRow * dx4;
+  const physSize = N * dx4;
+
+  const mx = sx(physX0);
+  const my = sy(physY0);
+  const ms = px(physSize);
+
+  // Fill
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = '#58a6ff';
+  ctx.fillRect(mx, my, ms, ms);
+
+  // Border
+  ctx.globalAlpha = 0.85;
+  ctx.strokeStyle = '#58a6ff';
+  ctx.lineWidth = devicePixelRatio * 2.5;
+  ctx.setLineDash([6 * devicePixelRatio, 4 * devicePixelRatio]);
+  ctx.strokeRect(mx, my, ms, ms);
+  ctx.setLineDash([]);
+
+  // Cross-hair at mask center
+  const cx = mx + ms / 2;
+  const cy = my + ms / 2;
+  ctx.globalAlpha = 0.5;
+  ctx.strokeStyle = '#58a6ff';
+  ctx.lineWidth = devicePixelRatio;
+  ctx.beginPath();
+  ctx.moveTo(cx - 8 * devicePixelRatio, cy);
+  ctx.lineTo(cx + 8 * devicePixelRatio, cy);
+  ctx.moveTo(cx, cy - 8 * devicePixelRatio);
+  ctx.lineTo(cx, cy + 8 * devicePixelRatio);
+  ctx.stroke();
+
+  // Label
+  ctx.globalAlpha = 1;
+  ctx.font = `bold ${11 * devicePixelRatio}px sans-serif`;
+  ctx.fillStyle = '#58a6ff';
+  ctx.fillText('Mask', mx + 4 * devicePixelRatio, my - 4 * devicePixelRatio);
+
+  ctx.globalAlpha = 1;
+}
+
+// Highlight covered cells on a specific layer
+function drawCoveredCells(layerKey, coverage) {
+  if (!coverage || coverage.count === 0) return;
+  const dx = DX[layerKey];
+  const ext = EXTENT[layerKey];
+  const color = COLORS[layerKey];
+
+  const cellPx = px(dx);
+  // Only draw individual cell highlights if cells are large enough
+  if (cellPx < 2) return;
+
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = color;
+  for (let r = coverage.rowStart; r <= coverage.rowEnd; r++) {
+    const py = -ext + r * dx;
+    const screenY = sy(py);
+    for (let c = coverage.colStart; c <= coverage.colEnd; c++) {
+      const pxCoord = -ext + c * dx;
+      const screenX = sx(pxCoord);
+      ctx.fillRect(screenX, screenY, cellPx, cellPx);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Draw axes
+  ctx.globalAlpha = 0.15;
+  ctx.strokeStyle = '#484f58';
+  ctx.lineWidth = devicePixelRatio;
+  ctx.beginPath();
+  ctx.moveTo(0, oy); ctx.lineTo(W, oy);
+  ctx.moveTo(ox, 0); ctx.lineTo(ox, H);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Grids from outer to inner
+  const coverages = computeAllCoverages();
+
+  // Draw covered cell highlights (behind grid lines)
+  drawCoveredCells('L4', coverages.L4);
+  drawCoveredCells('L3', coverages.L3);
+  drawCoveredCells('L2', coverages.L2);
+  drawCoveredCells('L1', coverages.L1);
+
+  // Draw grid boundaries & lines
+  drawGrid('L4', 0.12);
+  drawGrid('L3', 0.18);
+  drawGrid('L2', 0.25);
+  drawGrid('L1', 0.35);
+
+  // Draw mask
+  const pos = getMaskPosition();
+  drawMask(getN(), pos.row, pos.col);
+
+  // Update info
+  updateInfo(coverages, pos);
+}
+
+// ===== Coverage Computation =====
+// The mask covers a physical rectangle. For each layer, we compute which cells
+// of that layer are physically covered (even partially) by this rectangle.
+
+function computeCoverage(layerKey, maskPhysX0, maskPhysY0, maskPhysSize) {
+  const dx = DX[layerKey];
+  const ext = EXTENT[layerKey];
+
+  // Layer cell i covers physical range: [-ext + i*dx, -ext + (i+1)*dx]
+  // We need cells where cell's physical range overlaps with mask's physical range.
+  // Mask physical range: [maskPhysX0, maskPhysX0 + maskPhysSize]
+
+  const maskPhysX1 = maskPhysX0 + maskPhysSize;
+  const maskPhysY1 = maskPhysY0 + maskPhysSize;
+
+  // Layer physical start = -ext
+  // Cell i starts at: -ext + i * dx
+  // Cell i ends at:   -ext + (i+1) * dx
+
+  // First cell overlapping: cell whose end > maskPhysStart
+  //   -ext + (i+1)*dx > maskPhysX0  =>  i > (maskPhysX0 + ext)/dx - 1
+  //   i_start = max(0, ceil((maskPhysX0 + ext) / dx - 1 + epsilon))
+  // Simpler: i_start = max(0, floor((maskPhysX0 - (-ext)) / dx))
+  //          but need to handle edge precisely
+
+  // Cell i overlaps mask if:
+  //   cellEnd > maskStart AND cellStart < maskEnd
+  //   -ext + (i+1)*dx > maskPhysX0  AND  -ext + i*dx < maskPhysX1
+
+  // From first condition: i > (maskPhysX0 + ext)/dx - 1
+  //   i >= ceil((maskPhysX0 + ext)/dx - 1 + 1e-12) = floor((maskPhysX0 + ext)/dx - 1) + 1 when not integer
+  // Simplify: colStart = max(0, Math.ceil((maskPhysX0 + ext) / dx - 1 + 1e-9))
+  // Actually let me just do it cleanly:
+
+  let colStart = Math.floor((maskPhysX0 - (-ext)) / dx);
+  // If the mask start aligns exactly with cell boundary, that cell is included.
+  // If mask start is past cell end, cell is not included. But floor handles this.
+  colStart = Math.max(0, colStart);
+
+  let colEnd = Math.ceil((maskPhysX1 - (-ext)) / dx) - 1;
+  // Cell colEnd: its start must be < maskPhysX1
+  //   -ext + colEnd * dx < maskPhysX1
+  //   colEnd < (maskPhysX1 + ext) / dx
+  colEnd = Math.min(CELLS - 1, colEnd);
+
+  // Verify: if cell colStart's end <= maskPhysX0, skip it
+  // cellEnd = -ext + (colStart+1)*dx
+  while (colStart <= colEnd && (-ext + (colStart + 1) * dx) <= maskPhysX0 + 1e-12) colStart++;
+  // if cell colEnd's start >= maskPhysX1, skip it
+  while (colEnd >= colStart && (-ext + colEnd * dx) >= maskPhysX1 - 1e-12) colEnd--;
+
+  let rowStart = Math.floor((maskPhysY0 - (-ext)) / dx);
+  rowStart = Math.max(0, rowStart);
+  let rowEnd = Math.ceil((maskPhysY1 - (-ext)) / dx) - 1;
+  rowEnd = Math.min(CELLS - 1, rowEnd);
+
+  while (rowStart <= rowEnd && (-ext + (rowStart + 1) * dx) <= maskPhysY0 + 1e-12) rowStart++;
+  while (rowEnd >= rowStart && (-ext + rowEnd * dx) >= maskPhysY1 - 1e-12) rowEnd--;
+
+  if (colStart > colEnd || rowStart > rowEnd) {
+    return { rowStart: -1, rowEnd: -1, colStart: -1, colEnd: -1, rowCount: 0, colCount: 0, count: 0 };
+  }
+
+  const rowCount = rowEnd - rowStart + 1;
+  const colCount = colEnd - colStart + 1;
+  return { rowStart, rowEnd, colStart, colEnd, rowCount, colCount, count: rowCount * colCount };
+}
+
+function computeAllCoverages() {
+  const N = getN();
+  const pos = getMaskPosition();
+  const dx4 = DX.L4;
+  const ext4 = EXTENT.L4;
+
+  const maskPhysX0 = -ext4 + pos.col * dx4;
+  const maskPhysY0 = -ext4 + pos.row * dx4;
+  const maskPhysSize = N * dx4;
+
+  return {
+    L4: computeCoverage('L4', maskPhysX0, maskPhysY0, maskPhysSize),
+    L3: computeCoverage('L3', maskPhysX0, maskPhysY0, maskPhysSize),
+    L2: computeCoverage('L2', maskPhysX0, maskPhysY0, maskPhysSize),
+    L1: computeCoverage('L1', maskPhysX0, maskPhysY0, maskPhysSize)
+  };
+}
+
+// ===== State & Controls =====
+function getN() { return parseInt(document.getElementById('sliderN').value); }
+function getD() { return parseInt(document.getElementById('sliderD').value); }
+function getStep() { return parseInt(document.getElementById('sliderStep').value); }
+
+function computeSteps(N, D) {
+  // Mask slides from top-left. Starting col/row range: 0 to CELLS-N, step D.
+  const maxStart = CELLS - N;
+  const positions = [];
+  for (let r = 0; r <= maxStart; r += D) {
+    for (let c = 0; c <= maxStart; c += D) {
+      positions.push({ row: r, col: c });
+    }
+  }
+  return positions;
+}
+
+let positions = [];
+
+function refreshPositions() {
+  const N = getN();
+  const D = getD();
+  positions = computeSteps(N, D);
+  const slider = document.getElementById('sliderStep');
+  slider.max = Math.max(0, positions.length - 1);
+  if (parseInt(slider.value) > positions.length - 1) {
+    slider.value = 0;
+  }
+}
+
+function getMaskPosition() {
+  const step = getStep();
+  if (positions.length === 0) return { row: 0, col: 0 };
+  return positions[Math.min(step, positions.length - 1)];
+}
+
+function updateInfo(coverages, pos) {
+  const N = getN();
+  const step = getStep();
+
+  document.getElementById('stepLabel').textContent =
+    `${step} / ${positions.length - 1}  (共 ${positions.length} 步)`;
+
+  document.getElementById('maskPosInfo').innerHTML =
+    `L4 行: <b>${pos.row}</b> ~ <b>${pos.row + N - 1}</b>, ` +
+    `列: <b>${pos.col}</b> ~ <b>${pos.col + N - 1}</b><br>` +
+    `物理窗口: ${N}×${N} = <b>${N * N}</b> L4 cells`;
+
+  const layers = ['L4', 'L3', 'L2', 'L1'];
+  const prefixes = ['l4', 'l3', 'l2', 'l1'];
+  const sPrefixes = ['s4', 's3', 's2', 's1'];
+
+  for (let i = 0; i < 4; i++) {
+    const c = coverages[layers[i]];
+    const p = prefixes[i];
+    const sp = sPrefixes[i];
+
+    if (c.count === 0) {
+      document.getElementById(p + 'Rows').textContent = '无覆盖';
+      document.getElementById(p + 'Cols').textContent = '无覆盖';
+      document.getElementById(p + 'Count').textContent = '0';
+      document.getElementById(sp + 'c').textContent = '0';
+      document.getElementById(sp + 'p').textContent = '0%';
+    } else {
+      document.getElementById(p + 'Rows').textContent = `[${c.rowStart}, ${c.rowEnd}]  (${c.rowCount} 行)`;
+      document.getElementById(p + 'Cols').textContent = `[${c.colStart}, ${c.colEnd}]  (${c.colCount} 列)`;
+      document.getElementById(p + 'Count').textContent = c.count.toLocaleString();
+      document.getElementById(sp + 'c').textContent = c.count.toLocaleString();
+      document.getElementById(sp + 'p').textContent = (c.count / (CELLS * CELLS) * 100).toFixed(2) + '%';
+    }
+  }
+}
+
+// ===== Event Binding =====
+document.getElementById('sliderN').addEventListener('input', function() {
+  document.getElementById('valN').textContent = this.value;
+  refreshPositions();
+  render();
+});
+
+document.getElementById('sliderD').addEventListener('input', function() {
+  document.getElementById('valD').textContent = this.value;
+  refreshPositions();
+  render();
+});
+
+document.getElementById('sliderStep').addEventListener('input', function() {
+  render();
+});
+
+document.getElementById('sliderSpeed').addEventListener('input', function() {
+  document.getElementById('valSpeed').textContent = this.value;
+});
+
+// Play / Stop
+let playing = false;
+let playTimer = null;
+
+document.getElementById('btnPlay').addEventListener('click', function() {
+  if (playing) {
+    stopPlay();
+  } else {
+    startPlay();
+  }
+});
+
+document.getElementById('btnReset').addEventListener('click', function() {
+  stopPlay();
+  document.getElementById('sliderStep').value = 0;
+  render();
+});
+
+function startPlay() {
+  playing = true;
+  document.getElementById('btnPlay').textContent = '⏸ 暂停';
+  document.getElementById('btnPlay').style.background = '#da3633';
+  tick();
+}
+
+function stopPlay() {
+  playing = false;
+  document.getElementById('btnPlay').textContent = '▶ 播放';
+  document.getElementById('btnPlay').style.background = '#238636';
+  if (playTimer) { clearTimeout(playTimer); playTimer = null; }
+}
+
+function tick() {
+  if (!playing) return;
+  const slider = document.getElementById('sliderStep');
+  let v = parseInt(slider.value);
+  if (v < positions.length - 1) {
+    slider.value = v + 1;
+    render();
+  } else {
+    stopPlay();
+    return;
+  }
+  const speed = parseInt(document.getElementById('sliderSpeed').value);
+  playTimer = setTimeout(tick, 1000 / speed);
+}
+
+// ===== Init =====
+function init() {
+  resizeCanvas();
+  refreshPositions();
+  render();
+}
+
+window.addEventListener('resize', () => { resizeCanvas(); render(); });
+init();
+</script>
+
+</body>
+</html>

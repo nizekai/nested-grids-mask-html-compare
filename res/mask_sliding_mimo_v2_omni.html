@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nested Grids & Mask Sliding Demo</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .canvas-panel {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .control-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            width: 350px;
+        }
+        .control-group {
+            margin-bottom: 20px;
+        }
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .slider-container input[type="range"] {
+            flex: 1;
+        }
+        .slider-value {
+            min-width: 40px;
+            text-align: right;
+        }
+        #progressSlider {
+            width: 100%;
+        }
+        .output {
+            margin-top: 20px;
+            border-top: 1px solid #ddd;
+            padding-top: 15px;
+        }
+        .layer-info {
+            margin-bottom: 10px;
+            padding: 8px;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+        .layer-info h4 {
+            margin: 0 0 5px 0;
+            color: #333;
+        }
+        .layer-info p {
+            margin: 2px 0;
+            font-size: 14px;
+        }
+        canvas {
+            border: 1px solid #ccc;
+            background: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>Nested Grids & Mask Sliding Demo</h1>
+    <div class="container">
+        <div class="canvas-panel">
+            <canvas id="gridCanvas" width="600" height="600"></canvas>
+        </div>
+        <div class="control-panel">
+            <div class="control-group">
+                <label for="NSlider">Mask size N (cells on L4):</label>
+                <div class="slider-container">
+                    <input type="range" id="NSlider" min="1" max="121" value="30">
+                    <span class="slider-value" id="NValue">30</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="DSlider">Step size D (cells):</label>
+                <div class="slider-container">
+                    <input type="range" id="DSlider" min="1" max="121" value="10">
+                    <span class="slider-value" id="DValue">10</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="progressSlider">Mask position progress:</label>
+                <div class="slider-container">
+                    <span>0</span>
+                    <input type="range" id="progressSlider" min="0" max="100" value="0" style="flex:1">
+                    <span>100</span>
+                </div>
+                <div style="text-align: center; margin-top: 5px;">
+                    Step: <span id="stepDisplay">0</span> / <span id="totalSteps">0</span>
+                </div>
+            </div>
+            <div class="output">
+                <h3>Coverage Information</h3>
+                <div id="coverageInfo"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Constants
+        const CELLS_PER_LAYER = 121;
+        const LAYER_NAMES = ['L1', 'L2', 'L3', 'L4'];
+        // Physical resolution: L4 dx = 1, L3 dx = 0.5, L2 dx = 0.25, L1 dx = 0.125
+        const DX = [0.125, 0.25, 0.5, 1.0]; // index 0 = L1, 3 = L4
+        // Scale factors relative to L4: L4 scale = 1, L3 = 2, L2 = 4, L1 = 8
+        const SCALE = [8, 4, 2, 1]; // L1 scale = 8, L4 scale = 1
+
+        // DOM elements
+        const canvas = document.getElementById('gridCanvas');
+        const ctx = canvas.getContext('2d');
+        const NSlider = document.getElementById('NSlider');
+        const NValue = document.getElementById('NValue');
+        const DSlider = document.getElementById('DSlider');
+        const DValue = document.getElementById('DValue');
+        const progressSlider = document.getElementById('progressSlider');
+        const stepDisplay = document.getElementById('stepDisplay');
+        const totalStepsDisplay = document.getElementById('totalSteps');
+        const coverageInfo = document.getElementById('coverageInfo');
+
+        // State
+        let N = 30;
+        let D = 10;
+        let currentStep = 0;
+        let totalSteps = 0;
+        let maskI4 = 0;
+        let maskJ4 = 0;
+
+        // Compute total steps based on N and D
+        function computeTotalSteps() {
+            const maxI = CELLS_PER_LAYER - N;
+            const maxJ = CELLS_PER_LAYER - N;
+            const stepsI = Math.floor(maxI / D) + 1;
+            const stepsJ = Math.floor(maxJ / D) + 1;
+            totalSteps = stepsI * stepsJ;
+            totalStepsDisplay.textContent = totalSteps;
+            progressSlider.max = totalSteps - 1;
+        }
+
+        // Convert step index to (i4, j4) mask position
+        function stepToPosition(step) {
+            const maxI = CELLS_PER_LAYER - N;
+            const maxJ = CELLS_PER_LAYER - N;
+            const stepsI = Math.floor(maxI / D) + 1;
+            const stepsJ = Math.floor(maxJ / D) + 1;
+            const iIndex = Math.floor(step / stepsJ);
+            const jIndex = step % stepsJ;
+            maskI4 = iIndex * D;
+            maskJ4 = jIndex * D;
+            // Clamp to max
+            if (maskI4 > maxI) maskI4 = maxI;
+            if (maskJ4 > maxJ) maskJ4 = maxJ;
+        }
+
+        // Calculate coverage for each layer
+        function calculateCoverage() {
+            const coverage = [];
+            for (let layerIdx = 0; layerIdx < 4; layerIdx++) {
+                const dx = DX[layerIdx];
+                // Physical range of mask in L4 cells (dx4=1)
+                const physMinI = maskI4;
+                const physMaxI = maskI4 + N; // exclusive
+                const physMinJ = maskJ4;
+                const physMaxJ = maskJ4 + N;
+                // Convert to layer cell indices
+                const iMin = Math.floor(physMinI / dx);
+                const iMax = Math.floor((physMaxI - 1e-9) / dx); // inclusive, subtract epsilon to avoid off-by-one at boundary
+                const jMin = Math.floor(physMinJ / dx);
+                const jMax = Math.floor((physMaxJ - 1e-9) / dx);
+                // Clamp to layer bounds [0, CELLS_PER_LAYER-1]
+                const iMinClamped = Math.max(0, iMin);
+                const iMaxClamped = Math.min(CELLS_PER_LAYER - 1, iMax);
+                const jMinClamped = Math.max(0, jMin);
+                const jMaxClamped = Math.min(CELLS_PER_LAYER - 1, jMax);
+                // Count
+                let count = 0;
+                if (iMinClamped <= iMaxClamped && jMinClamped <= jMaxClamped) {
+                    count = (iMaxClamped - iMinClamped + 1) * (jMaxClamped - jMinClamped + 1);
+                }
+                coverage.push({
+                    layer: LAYER_NAMES[layerIdx],
+                    iMin: iMinClamped,
+                    iMax: iMaxClamped,
+                    jMin: jMinClamped,
+                    jMax: jMaxClamped,
+                    count: count
+                });
+            }
+            return coverage;
+        }
+
+        // Draw everything
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const margin = 50;
+            const usable = canvas.width - 2 * margin;
+            // Draw layers from outermost (L4) to innermost (L1)
+            for (let layerIdx = 3; layerIdx >= 0; layerIdx--) {
+                const scale = SCALE[layerIdx]; // L4 scale = 1, L1 scale = 8
+                const size = usable / scale; // physical size in pixels
+                const x = margin + (usable - size) / 2;
+                const y = margin + (usable - size) / 2;
+                ctx.strokeStyle = layerIdx === 3 ? '#000' : '#666';
+                ctx.lineWidth = layerIdx === 3 ? 2 : 1;
+                ctx.strokeRect(x, y, size, size);
+                // Label
+                ctx.fillStyle = '#333';
+                ctx.font = '12px sans-serif';
+                ctx.fillText(LAYER_NAMES[layerIdx], x + 5, y + 15);
+            }
+            // Draw mask on L4
+            const l4Scale = SCALE[3];
+            const l4Size = usable / l4Scale;
+            const l4X = margin + (usable - l4Size) / 2;
+            const l4Y = margin + (usable - l4Size) / 2;
+            const cellSizeL4 = l4Size / CELLS_PER_LAYER;
+            const maskX = l4X + maskJ4 * cellSizeL4;
+            const maskY = l4Y + maskI4 * cellSizeL4;
+            const maskSize = N * cellSizeL4;
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+            ctx.fillRect(maskX, maskY, maskSize, maskSize);
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(maskX, maskY, maskSize, maskSize);
+        }
+
+        // Update coverage display
+        function updateCoverageDisplay() {
+            const coverage = calculateCoverage();
+            let html = '';
+            coverage.forEach(info => {
+                html += `<div class="layer-info">
+                    <h4>${info.layer}</h4>
+                    <p>Cells covered: <strong>${info.count}</strong></p>
+                    <p>Index ranges: i [${info.iMin}..${info.iMax}], j [${info.jMin}..${info.jMax}]</p>
+                </div>`;
+            });
+            coverageInfo.innerHTML = html;
+        }
+
+        // Event handlers
+        NSlider.addEventListener('input', () => {
+            N = parseInt(NSlider.value);
+            NValue.textContent = N;
+            computeTotalSteps();
+            currentStep = 0;
+            progressSlider.value = 0;
+            stepToPosition(0);
+            draw();
+            updateCoverageDisplay();
+        });
+
+        DSlider.addEventListener('input', () => {
+            D = parseInt(DSlider.value);
+            DValue.textContent = D;
+            computeTotalSteps();
+            currentStep = 0;
+            progressSlider.value = 0;
+            stepToPosition(0);
+            draw();
+            updateCoverageDisplay();
+        });
+
+        progressSlider.addEventListener('input', () => {
+            currentStep = parseInt(progressSlider.value);
+            stepDisplay.textContent = currentStep;
+            stepToPosition(currentStep);
+            draw();
+            updateCoverageDisplay();
+        });
+
+        // Initialize
+        computeTotalSteps();
+        stepToPosition(0);
+        draw();
+        updateCoverageDisplay();
+    </script>
+</body>
+</html>

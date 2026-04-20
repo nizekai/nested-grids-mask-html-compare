@@ -190,12 +190,15 @@
 
     .model-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 16px;
+      align-items: start;
     }
 
     .model-card {
       position: relative;
+      display: flex;
+      flex-direction: column;
       border: 1px solid var(--border);
       border-radius: 14px;
       overflow: hidden;
@@ -203,6 +206,14 @@
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 255, 0.92));
       box-shadow: 0 10px 22px rgba(31, 41, 55, 0.06);
       transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+
+    .card-main {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1 1 auto;
+      min-height: 0;
     }
 
     .model-card:hover {
@@ -221,9 +232,11 @@
     }
 
     .model-card h3 {
-      margin: 10px 0 8px;
+      margin: 0;
       font-size: 20px;
       line-height: 1.2;
+      flex: 1 1 auto;
+      min-width: 0;
     }
 
     .card-topline {
@@ -231,20 +244,8 @@
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      margin: 10px 0 8px;
+      margin: 10px 0 0;
       flex-wrap: wrap;
-    }
-
-    .model-meta {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: rgba(37, 99, 235, 0.08);
-      color: var(--accent);
-      font-size: 12px;
-      font-weight: 700;
     }
 
     .logic-badge {
@@ -273,25 +274,47 @@
     }
 
     .review-text {
-      margin: 0 0 12px;
+      margin: 0;
       color: var(--muted);
       font-size: 14px;
       line-height: 1.6;
     }
 
-    .file-path {
-      display: block;
-      margin-bottom: 14px;
-      color: #8b93a7;
+    .ai-review-box {
+      margin: 0;
+      padding: 12px 13px;
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(15, 118, 110, 0.05));
+      border: 1px solid rgba(37, 99, 235, 0.14);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .ai-review-label {
+      display: inline-flex;
+      align-items: center;
+      margin-bottom: 6px;
       font-size: 12px;
-      font-family: "SFMono-Regular", "JetBrains Mono", monospace;
-      word-break: break-all;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    .ai-review-text {
+      margin: 0;
+      color: #25415f;
+      font-size: 13px;
+      line-height: 1.65;
     }
 
     .card-actions {
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
+      margin-top: auto;
+      padding-top: 14px;
+      border-top: 1px solid rgba(42, 59, 92, 0.08);
     }
 
     .card-link {
@@ -383,8 +406,11 @@
       <p class="intro">
         均开启thinking，仅一次对话，禁止引用外部信息。工具：除gpt用codex，其他用opencode。
       </p>
+      <p class="intro" style="margin-top: -6px; font-size: 14px;">
+        主要看物理坐标映射、边界处理和信息表达。最容易错的是共享中心、121 奇数边长、以及覆盖统计里的 off-by-one。
+      </p>
       <div class="helper-row">
-        <span>实例 Prompt</span>
+        <span>Prompt</span>
       </div>
       <textarea
         id="promptInput"
@@ -399,7 +425,7 @@
       <div class="panel-head">
         <div>
           <h2>模型结果页</h2>
-          <p>点击卡片即可跳到 `res/` 下面的具体结果页面，方便逐个核对输出差异。</p>
+          <p>点击卡片即可跳到具体结果页面，方便逐个核对输出差异。</p>
         </div>
       </div>
       <div class="model-grid" id="modelGrid"></div>
@@ -412,9 +438,26 @@
   <script>
     const pages = [
       {
+        name: "Claude Opus 4.6",
+        file: "res/mask_sliding_claude_opus_4.6.html",
+        review: "很稳，无懈可击。",
+        aiReview: "良好。共享中心和覆盖计算都很稳，但 N 被限制成奇数区间，且 D 不能整除时通常不会补到真正右下角。",
+        logicLabel: "逻辑可靠",
+        logicClass: "correct"
+      },
+      {
+        name: "Claude Opus 4.7",
+        file: "res/mask_sliding_claude_opus_4_7.html",
+        review: "What can I say",
+        aiReview: "优秀。物理建模和统计口径最平衡；主要短板是末端滑动多数情况下不会精确补到 121-N。",
+        logicLabel: "逻辑可靠",
+        logicClass: "correct"
+      },
+      {
         name: "Doubao",
         file: "res/mask_sliding_doubao.html",
         review: "版面最朴素，能把参数和统计拆开，但可视层比较简陋，演示感一般。边界换算有 off-by-one，覆盖范围会偏一格。",
+        aiReview: "一般。共享中心没有丢，但进度条是百分比，滑动顺序偏列优先，逐行语义不够干净。",
         logicLabel: "逻辑微瑕",
         logicClass: "mixed"
       },
@@ -422,13 +465,15 @@
         name: "Gemini 3 Flash Preview",
         file: "res/mask_sliding_gemini-3-flash-preview.html",
         review: "看着没什么大问题。但是边界索引换算有 off-by-one，实际统计会偏一格。",
-        logicLabel: "逻辑微瑕",
-        logicClass: "mixed"
+        aiReview: "较差。把 121 个 cell 的物理跨度压成了 120，底层几何模型已经偏掉，不只是视觉小误差。",
+        logicLabel: "逻辑错误",
+        logicClass: "wrong"
       },
       {
-        name: "Gemini 3.1 Pro Preview",
+        name: "Gemini 3.1 Pro Pre",
         file: "res/mask_sliding_gemini_3_1_pro_preview.html",
-        review: "UI很简洁，出了layout会跳，没什么大问题。主要是边界索引有 off-by-one 微偏差。",
+        review: "UI很简洁，除了layout会跳，没什么大问题。主要是边界索引有 off-by-one 微偏差。",
+        aiReview: "一般。单画布嵌套结构是对的，但 60/120 基准和 round 式索引回算不够稳，边界精度偏弱。",
         logicLabel: "逻辑微瑕",
         logicClass: "mixed"
       },
@@ -436,6 +481,15 @@
         name: "GLM 5.1",
         file: "res/mask_sliding_glm5.1.html",
         review: "综合质量很高，甚至有MASK 区域放大视图。老师傅想得最久，13分钟，但也挺稳的。(虽然一度想抄别人作业）",
+        aiReview: "优秀。真实物理相交的计算最扎实，整体完成度很高；主要问题是未补到真正右下角，而且用了外部 CDN。",
+        logicLabel: "逻辑可靠",
+        logicClass: "correct"
+      },
+      {
+        name: "GPT-5.3-Codex",
+        file: "res/mask_sliding_gpt_5_3_codex.html",
+        review: "挺稳，坐标和边界都对。",
+        aiReview: "良好。单画布同心嵌套、补尾逻辑和覆盖统计都成立，是前列实现之一。",
         logicLabel: "逻辑可靠",
         logicClass: "correct"
       },
@@ -443,6 +497,7 @@
         name: "GPT-5.4 High",
         file: "res/mask_sliding_gpt5.4high.html",
         review: "错倒是没错，但是竖向排列观感不好。UI一般",
+        aiReview: "一般。统计做得很细，且能补到右下角；但左侧改成分层展示带，削弱了共享空间中的 nested grids 表达。",
         logicLabel: "逻辑可靠",
         logicClass: "correct"
       },
@@ -450,6 +505,7 @@
         name: "GPT-5.4 XHigh",
         file: "res/mask_sliding_gpt5.4xhigh.html",
         review: "比5.4high强，但是还是竖向排列。。UI提升了",
+        aiReview: "良好。工程和统计面很强，也能补尾；但和 5.4 High 一样，不是我最认可的单画布同心嵌套表达。",
         logicLabel: "逻辑可靠",
         logicClass: "correct"
       },
@@ -457,6 +513,7 @@
         name: "Kimi K2.5",
         file: "res/mask_sliding_kimik2_5.html",
         review: "UI视觉很不错，逻辑也没出错，速度也很快。",
+        aiReview: "一般。共享中心意识是有的，但说明文字偷换成固定倍数公式，进度还是百分比，而且未补到真正右下角。",
         logicLabel: "逻辑可靠",
         logicClass: "correct"
       },
@@ -464,24 +521,47 @@
         name: "Mimo v2 Pro",
         file: "res/mask_sliding_mimo_v2_pro.html",
         review: "UI还可以，理工男风格。边界定义偏半格，最后体现成覆盖统计上的 off-by-one。",
+        aiReview: "一般。可用雏形在，但 121 和 120 的几何基准混用，存在半格偏移，同时也没有补齐终点。",
         logicLabel: "逻辑微瑕",
         logicClass: "mixed"
+      },
+      {
+        name: "Mimo v2 Omni",
+        file: "res/mask_sliding_mimo_v2_omni.html",
+        review: "排版还行，但统计逻辑跑偏了。共享中心坐标系做丢了。",
+        aiReview: "较差。核心问题不是 UI，而是覆盖统计没有正确处理共享中心和各层不同物理范围，结论会实质性误判。",
+        logicLabel: "逻辑错误",
+        logicClass: "wrong"
       },
       {
         name: "MiniMax M2.7",
         file: "res/mask_sliding_minimax_m2_7.html",
         review: "不行。",
-        logicLabel: "拉完了",
+        aiReview: "较差。已经不是二维逐行扫描的共享中心嵌套网格，统计也退化成一维逻辑，结构性跑偏。",
+        logicLabel: "逻辑错误",
         logicClass: "wrong"
       },
       {
-        name: "Qwen3 6 Plus",
+        name: "Qwen3.6 Plus",
         file: "res/mask_sliding_qwen3_6_plus.html",
         review: "非常不错的，作为演示来讲没毛病",
+        aiReview: "良好。单画布结构和二维统计都对，演示感不错；但仍然没补到真正右下角，参数范围也被缩窄。",
         logicLabel: "逻辑可靠",
         logicClass: "correct"
       }
     ];
+
+    const logicRank = {
+      correct: 0,
+      mixed: 1,
+      wrong: 2
+    };
+
+    pages.sort((a, b) => {
+      const logicDiff = (logicRank[a.logicClass] ?? 99) - (logicRank[b.logicClass] ?? 99);
+      if (logicDiff !== 0) return logicDiff;
+      return a.name.localeCompare(b.name, "en", { numeric: true, sensitivity: "base" });
+    });
 
     const promptInput = document.getElementById("promptInput");
     const modelGrid = document.getElementById("modelGrid");
@@ -524,13 +604,17 @@
     function renderCards() {
       modelGrid.innerHTML = pages.map((page) => `
         <article class="model-card">
-          <div class="card-topline">
-            <span class="model-meta">Result Page</span>
-            <span class="logic-badge ${page.logicClass}">${page.logicLabel}</span>
+          <div class="card-main">
+            <div class="card-topline">
+              <h3>${page.name}</h3>
+              <span class="logic-badge ${page.logicClass}">${page.logicLabel}</span>
+            </div>
+            <p class="review-text">${page.review}</p>
+            <div class="ai-review-box">
+              <span class="ai-review-label">AI评价</span>
+              <p class="ai-review-text">${page.aiReview}</p>
+            </div>
           </div>
-          <h3>${page.name}</h3>
-          <p class="review-text">${page.review}</p>
-          <span class="file-path">${page.file}</span>
           <div class="card-actions">
             <a class="card-link primary" href="${page.file}">打开页面</a>
             <a class="card-link secondary" href="${page.file}" target="_blank" rel="noreferrer">新标签打开</a>

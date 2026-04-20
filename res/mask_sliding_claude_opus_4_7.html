@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>嵌套网格与物理遮罩滑动对应关系</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #0f1419;
+    color: #e6edf3;
+    display: flex;
+    min-height: 100vh;
+  }
+  .left {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: radial-gradient(circle at center, #1a2332 0%, #0f1419 100%);
+  }
+  .right {
+    width: 420px;
+    padding: 24px;
+    background: #161b22;
+    border-left: 1px solid #30363d;
+    overflow-y: auto;
+    max-height: 100vh;
+  }
+  canvas {
+    background: #0b0f14;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  }
+  h1 {
+    font-size: 18px;
+    margin: 0 0 8px 0;
+    color: #58a6ff;
+  }
+  h2 {
+    font-size: 14px;
+    margin: 20px 0 10px 0;
+    color: #7ee787;
+    border-bottom: 1px solid #30363d;
+    padding-bottom: 6px;
+  }
+  .subtitle {
+    font-size: 12px;
+    color: #8b949e;
+    margin-bottom: 20px;
+  }
+  .control {
+    margin-bottom: 14px;
+  }
+  .control label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+  .control label .value {
+    color: #f0883e;
+    font-weight: 600;
+    font-family: "SF Mono", Consolas, monospace;
+  }
+  input[type="range"] {
+    width: 100%;
+    accent-color: #58a6ff;
+  }
+  .btns {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  button {
+    flex: 1;
+    background: #21262d;
+    color: #e6edf3;
+    border: 1px solid #30363d;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  button:hover { background: #30363d; }
+  button.primary { background: #238636; border-color: #2ea043; }
+  button.primary:hover { background: #2ea043; }
+  .layer-info {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-left: 3px solid;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: "SF Mono", Consolas, monospace;
+  }
+  .layer-info .name {
+    font-weight: 700;
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .layer-info .row {
+    color: #8b949e;
+    margin: 2px 0;
+  }
+  .layer-info .row span.hi { color: #f0883e; }
+  .layer-info .row span.ok { color: #7ee787; }
+  .L1 { border-left-color: #ff7b72; }
+  .L1 .name { color: #ff7b72; }
+  .L2 { border-left-color: #f0883e; }
+  .L2 .name { color: #f0883e; }
+  .L3 { border-left-color: #d2a8ff; }
+  .L3 .name { color: #d2a8ff; }
+  .L4 { border-left-color: #58a6ff; }
+  .L4 .name { color: #58a6ff; }
+  .formula {
+    background: #0d1117;
+    border: 1px dashed #30363d;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: #8b949e;
+    font-family: "SF Mono", Consolas, monospace;
+    line-height: 1.7;
+    margin-top: 8px;
+  }
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    margin: 4px 0;
+  }
+  .sw {
+    width: 14px; height: 14px; border-radius: 2px; border: 1px solid;
+  }
+</style>
+</head>
+<body>
+  <div class="left">
+    <canvas id="cv" width="780" height="780"></canvas>
+  </div>
+
+  <div class="right">
+    <h1>嵌套网格 · 物理遮罩滑动</h1>
+    <div class="subtitle">4 层嵌套网格 (121×121)，共享中心，向内分辨率翻倍。Mask 定义在 L4 上。</div>
+
+    <h2>参数控制</h2>
+
+    <div class="control">
+      <label>Mask 尺寸 N (L4 cell) <span class="value" id="vN">20</span></label>
+      <input type="range" id="sN" min="1" max="121" value="20">
+    </div>
+
+    <div class="control">
+      <label>滑动步长 D (L4 cell) <span class="value" id="vD">5</span></label>
+      <input type="range" id="sD" min="1" max="60" value="5">
+    </div>
+
+    <div class="control">
+      <label>滑动进度 <span class="value" id="vStep">0 / 0</span></label>
+      <input type="range" id="sStep" min="0" max="0" value="0">
+    </div>
+
+    <div class="btns">
+      <button id="btnPrev">← 上一步</button>
+      <button id="btnPlay" class="primary">▶ 自动播放</button>
+      <button id="btnNext">下一步 →</button>
+    </div>
+
+    <h2>图例</h2>
+    <div class="legend-row"><span class="sw" style="background:rgba(255,123,114,0.15); border-color:#ff7b72"></span>L1 (最细)</div>
+    <div class="legend-row"><span class="sw" style="background:rgba(240,136,62,0.10); border-color:#f0883e"></span>L2</div>
+    <div class="legend-row"><span class="sw" style="background:rgba(210,168,255,0.08); border-color:#d2a8ff"></span>L3</div>
+    <div class="legend-row"><span class="sw" style="background:rgba(88,166,255,0.05); border-color:#58a6ff"></span>L4 (最粗)</div>
+    <div class="legend-row"><span class="sw" style="background:rgba(255,215,0,0.35); border-color:#ffd700"></span>Mask 窗口 (物理)</div>
+
+    <h2>各层被遮盖情况</h2>
+    <div id="layerInfo"></div>
+
+    <h2>物理关系说明</h2>
+    <div class="formula" id="formulaBox">
+      dx<sub>4</sub> = 8·dx<sub>1</sub>, dx<sub>3</sub> = 4·dx<sub>1</sub>, dx<sub>2</sub> = 2·dx<sub>1</sub><br>
+      L<sub>k</sub> 物理范围 = 121·dx<sub>k</sub>，居中对齐<br>
+      Mask 物理尺寸 = N·dx<sub>4</sub><br>
+      → 在 L<sub>k</sub> 上最多覆盖 N·2<sup>(4-k)</sup> 个 cell<br>
+      （超出该层范围则被截断）
+    </div>
+  </div>
+
+<script>
+(() => {
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+
+  // 物理模型 ---------------------------------------------------
+  // 以 dx1 = 1 为单位（最细层）。
+  // dx_k = 2^(k-1)。  L_k 物理范围 = 121 * dx_k。
+  // L4 最大。全部以 L4 为物理总范围做屏幕映射。
+  const CELLS = 121;
+  const dx = [1, 2, 4, 8];                 // L1..L4 每个 cell 的物理单位
+  const physExtent = dx.map(d => CELLS * d); // L1..L4 总物理范围
+  const totalPhys = physExtent[3];         // = 968
+  // L_k 的物理起点（居中，左上角）
+  const physOrigin = physExtent.map(e => (totalPhys - e) / 2);
+
+  // 屏幕映射
+  const canvasPad = 30;
+  const drawSize = Math.min(W, H) - canvasPad * 2;
+  const phys2px = v => (v / totalPhys) * drawSize;
+  const originPx = canvasPad;
+
+  // 控件 -------------------------------------------------------
+  const sN = document.getElementById('sN');
+  const sD = document.getElementById('sD');
+  const sStep = document.getElementById('sStep');
+  const vN = document.getElementById('vN');
+  const vD = document.getElementById('vD');
+  const vStep = document.getElementById('vStep');
+  const layerInfo = document.getElementById('layerInfo');
+
+  let playing = false;
+  let playTimer = null;
+
+  function getParams() {
+    const N = Math.min(+sN.value, CELLS);
+    const D = Math.max(1, +sD.value);
+    // 滑动：mask 在 L4 上从 (0,0) 到 (121-N, 121-N)，步长 D
+    const maxStart = Math.max(0, CELLS - N);
+    const stepsPerSide = Math.floor(maxStart / D) + 1;
+    const totalSteps = stepsPerSide * stepsPerSide;
+    return { N, D, maxStart, stepsPerSide, totalSteps };
+  }
+
+  function updateStepSlider() {
+    const { totalSteps } = getParams();
+    sStep.max = Math.max(0, totalSteps - 1);
+    if (+sStep.value > +sStep.max) sStep.value = 0;
+  }
+
+  // 根据 step 计算 mask 在 L4 上的 (i,j) 起始 cell 坐标
+  function maskL4Position(step) {
+    const { D, stepsPerSide, maxStart } = getParams();
+    const row = Math.floor(step / stepsPerSide);
+    const col = step % stepsPerSide;
+    // 最后一步可能到 maxStart（避免因整除丢失）
+    const i = Math.min(col * D, maxStart);
+    const j = Math.min(row * D, maxStart);
+    return { i, j };
+  }
+
+  // 将 L4 cell 索引转换为物理坐标
+  function l4ToPhys(i, j, N) {
+    const px0 = physOrigin[3] + i * dx[3];
+    const py0 = physOrigin[3] + j * dx[3];
+    const pw  = N * dx[3];
+    const ph  = N * dx[3];
+    return { px0, py0, px1: px0 + pw, py1: py0 + ph };
+  }
+
+  // 计算 Mask 物理窗口在 L_k 上覆盖的 cell 索引范围
+  // 返回 {i0,i1,j0,j1,countX,countY,count}，若无交集返回 count=0
+  function maskCoverOnLayer(kIdx, maskPhys) {
+    const dk = dx[kIdx];
+    const ox = physOrigin[kIdx];
+    // 相对层的物理坐标
+    const relX0 = maskPhys.px0 - ox;
+    const relY0 = maskPhys.py0 - ox;
+    const relX1 = maskPhys.px1 - ox;
+    const relY1 = maskPhys.py1 - ox;
+    // cell 范围（全/半覆盖都算覆盖）
+    // 用 floor(start/dk) 到 ceil(end/dk)-1
+    let i0 = Math.floor(relX0 / dk);
+    let i1 = Math.ceil(relX1 / dk) - 1;
+    let j0 = Math.floor(relY0 / dk);
+    let j1 = Math.ceil(relY1 / dk) - 1;
+    // 与 [0, CELLS-1] 求交
+    i0 = Math.max(0, i0);
+    j0 = Math.max(0, j0);
+    i1 = Math.min(CELLS - 1, i1);
+    j1 = Math.min(CELLS - 1, j1);
+    if (i1 < i0 || j1 < j0) {
+      return { i0: -1, i1: -1, j0: -1, j1: -1, countX: 0, countY: 0, count: 0 };
+    }
+    const countX = i1 - i0 + 1;
+    const countY = j1 - j0 + 1;
+    return { i0, i1, j0, j1, countX, countY, count: countX * countY };
+  }
+
+  // 渲染 -------------------------------------------------------
+  const layerStyle = [
+    { stroke: '#ff7b72', fill: 'rgba(255,123,114,0.05)', name: 'L1' },
+    { stroke: '#f0883e', fill: 'rgba(240,136,62,0.04)', name: 'L2' },
+    { stroke: '#d2a8ff', fill: 'rgba(210,168,255,0.03)', name: 'L3' },
+    { stroke: '#58a6ff', fill: 'rgba(88,166,255,0.02)', name: 'L4' },
+  ];
+
+  function drawLayer(kIdx) {
+    const dk = dx[kIdx];
+    const ox = physOrigin[kIdx];
+    const ext = physExtent[kIdx];
+    const x0 = originPx + phys2px(ox);
+    const y0 = originPx + phys2px(ox);
+    const sz = phys2px(ext);
+    const cellPx = phys2px(dk);
+
+    // 背景填充
+    ctx.fillStyle = layerStyle[kIdx].fill;
+    ctx.fillRect(x0, y0, sz, sz);
+
+    // 网格线：cell 太密时自适应降采样
+    const minPx = 2;
+    const stride = Math.max(1, Math.ceil(minPx / cellPx));
+    ctx.strokeStyle = layerStyle[kIdx].stroke;
+    ctx.globalAlpha = (kIdx === 3) ? 0.25 : 0.22;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    for (let i = 0; i <= CELLS; i += stride) {
+      const x = x0 + i * cellPx;
+      ctx.moveTo(x, y0);
+      ctx.lineTo(x, y0 + sz);
+    }
+    for (let j = 0; j <= CELLS; j += stride) {
+      const y = y0 + j * cellPx;
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x0 + sz, y);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // 层外框加粗
+    ctx.strokeStyle = layerStyle[kIdx].stroke;
+    ctx.lineWidth = 1.8;
+    ctx.strokeRect(x0, y0, sz, sz);
+
+    // 标签
+    ctx.fillStyle = layerStyle[kIdx].stroke;
+    ctx.font = 'bold 13px -apple-system, "SF Mono", monospace';
+    ctx.fillText(layerStyle[kIdx].name, x0 + 4, y0 + 14);
+  }
+
+  function drawCoverHighlight(kIdx, cover) {
+    if (cover.count === 0) return;
+    const dk = dx[kIdx];
+    const ox = physOrigin[kIdx];
+    const cellPx = phys2px(dk);
+    const x0 = originPx + phys2px(ox) + cover.i0 * cellPx;
+    const y0 = originPx + phys2px(ox) + cover.j0 * cellPx;
+    const w = cover.countX * cellPx;
+    const h = cover.countY * cellPx;
+    ctx.fillStyle = layerStyle[kIdx].stroke;
+    ctx.globalAlpha = 0.18;
+    ctx.fillRect(x0, y0, w, h);
+    ctx.globalAlpha = 1;
+  }
+
+  function drawMask(maskPhys) {
+    const x0 = originPx + phys2px(maskPhys.px0);
+    const y0 = originPx + phys2px(maskPhys.py0);
+    const w = phys2px(maskPhys.px1 - maskPhys.px0);
+    const h = phys2px(maskPhys.py1 - maskPhys.py0);
+
+    // 半透明金黄色
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.22)';
+    ctx.fillRect(x0, y0, w, h);
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(x0, y0, w, h);
+    ctx.setLineDash([]);
+
+    // 四角标记
+    ctx.fillStyle = '#ffd700';
+    const c = 4;
+    [[x0,y0],[x0+w,y0],[x0,y0+h],[x0+w,y0+h]].forEach(([x,y]) => {
+      ctx.fillRect(x-c/2, y-c/2, c, c);
+    });
+  }
+
+  function render() {
+    const { N, D, totalSteps } = getParams();
+    vN.textContent = N;
+    vD.textContent = D;
+    updateStepSlider();
+
+    const step = +sStep.value;
+    vStep.textContent = `${step + 1} / ${totalSteps}`;
+
+    const { i, j } = maskL4Position(step);
+    const maskPhys = l4ToPhys(i, j, N);
+
+    // 背景
+    ctx.fillStyle = '#0b0f14';
+    ctx.fillRect(0, 0, W, H);
+
+    // 由大到小画各层，便于小层在上
+    for (let k = 3; k >= 0; k--) drawLayer(k);
+
+    // 遮盖高亮
+    const covers = [];
+    for (let k = 0; k < 4; k++) {
+      const cov = maskCoverOnLayer(k, maskPhys);
+      covers.push(cov);
+      drawCoverHighlight(k, cov);
+    }
+
+    // Mask 自己（最顶层）
+    drawMask(maskPhys);
+
+    // 画中心十字
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 4]);
+    const cx = originPx + phys2px(totalPhys / 2);
+    ctx.beginPath();
+    ctx.moveTo(cx, originPx);
+    ctx.lineTo(cx, originPx + drawSize);
+    ctx.moveTo(originPx, cx);
+    ctx.lineTo(originPx + drawSize, cx);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 右侧信息
+    renderLayerInfo(N, D, i, j, covers);
+  }
+
+  function renderLayerInfo(N, D, i, j, covers) {
+    const totalCellsOnL4 = N * N;
+    let html = '';
+    html += `<div class="layer-info L4"><div class="name"><span>L4 (最粗)</span><span>Mask 起点 (${i}, ${j})</span></div>`;
+    html += infoRows(covers[3], 3, N, totalCellsOnL4);
+    html += `</div>`;
+
+    html += `<div class="layer-info L3"><div class="name"><span>L3</span><span>理论 2N×2N = ${2*N}×${2*N}</span></div>`;
+    html += infoRows(covers[2], 2, N, totalCellsOnL4);
+    html += `</div>`;
+
+    html += `<div class="layer-info L2"><div class="name"><span>L2</span><span>理论 4N×4N = ${4*N}×${4*N}</span></div>`;
+    html += infoRows(covers[1], 1, N, totalCellsOnL4);
+    html += `</div>`;
+
+    html += `<div class="layer-info L1"><div class="name"><span>L1 (最细)</span><span>理论 8N×8N = ${8*N}×${8*N}</span></div>`;
+    html += infoRows(covers[0], 0, N, totalCellsOnL4);
+    html += `</div>`;
+
+    layerInfo.innerHTML = html;
+  }
+
+  function infoRows(cov, kIdx, N, l4CellCount) {
+    if (cov.count === 0) {
+      return `<div class="row">i 索引：<span class="hi">—</span></div>
+              <div class="row">j 索引：<span class="hi">—</span></div>
+              <div class="row">覆盖数量：<span class="hi">0 cell</span>（Mask 在该层范围外）</div>`;
+    }
+    const theoretical = N * Math.pow(2, 3 - kIdx);
+    const actualX = cov.countX, actualY = cov.countY;
+    const clampedX = actualX < theoretical ? ' (被截断)' : '';
+    const clampedY = actualY < theoretical ? ' (被截断)' : '';
+    return `<div class="row">i 范围：<span class="ok">[${cov.i0} … ${cov.i1}]</span>　共 <span class="hi">${actualX}</span> cell${clampedX}</div>
+            <div class="row">j 范围：<span class="ok">[${cov.j0} … ${cov.j1}]</span>　共 <span class="hi">${actualY}</span> cell${clampedY}</div>
+            <div class="row">覆盖总数：<span class="hi">${cov.count}</span> cell</div>`;
+  }
+
+  // 事件 -------------------------------------------------------
+  [sN, sD].forEach(el => el.addEventListener('input', () => {
+    sStep.value = 0;
+    render();
+  }));
+  sStep.addEventListener('input', render);
+
+  document.getElementById('btnPrev').onclick = () => {
+    sStep.value = Math.max(0, +sStep.value - 1);
+    render();
+  };
+  document.getElementById('btnNext').onclick = () => {
+    sStep.value = Math.min(+sStep.max, +sStep.value + 1);
+    render();
+  };
+  const btnPlay = document.getElementById('btnPlay');
+  btnPlay.onclick = () => {
+    playing = !playing;
+    btnPlay.textContent = playing ? '⏸ 暂停' : '▶ 自动播放';
+    if (playing) {
+      playTimer = setInterval(() => {
+        const cur = +sStep.value, max = +sStep.max;
+        sStep.value = cur >= max ? 0 : cur + 1;
+        render();
+      }, 280);
+    } else {
+      clearInterval(playTimer);
+    }
+  };
+
+  // 初始化
+  updateStepSlider();
+  render();
+})();
+</script>
+</body>
+</html>

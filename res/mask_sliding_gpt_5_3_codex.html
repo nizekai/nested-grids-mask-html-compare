@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nested Grids & Mask Sliding</title>
+  <style>
+    :root {
+      --bg: #f4f6ef;
+      --panel: #fdfcf7;
+      --ink: #1f2a1f;
+      --muted: #5f6b5f;
+      --line: #b8c3af;
+      --accent: #c85a37;
+      --l1: #1f6f78;
+      --l2: #2f8f5b;
+      --l3: #607d3b;
+      --l4: #36454f;
+      --mask-fill: rgba(200, 90, 55, 0.2);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 18% 22%, #ffffff 0%, #f5f6ef 36%, transparent 64%),
+        radial-gradient(circle at 84% 78%, #e3ead7 0%, #f1f4ea 42%, transparent 76%),
+        var(--bg);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(480px, 1fr) minmax(340px, 440px);
+      gap: 18px;
+      padding: 20px;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid #d3dccd;
+      border-radius: 14px;
+      box-shadow: 0 6px 20px rgba(27, 45, 28, 0.08);
+      overflow: hidden;
+    }
+
+    .canvas-wrap {
+      padding: 14px;
+    }
+
+    .title {
+      margin: 0;
+      padding: 14px 16px;
+      font-size: 18px;
+      letter-spacing: 0.3px;
+      border-bottom: 1px solid #dee5d7;
+      background: linear-gradient(90deg, #f8fbf4, #f4f9f2);
+    }
+
+    canvas {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      display: block;
+      border-radius: 10px;
+      border: 1px solid #ccd7c4;
+      background:
+        linear-gradient(135deg, #fbfcf8, #f2f6eb);
+    }
+
+    .panel {
+      padding: 14px 16px 16px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .control {
+      display: grid;
+      gap: 6px;
+    }
+
+    .control label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    button {
+      border: 1px solid #c7d3bf;
+      background: #f6faf2;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover { background: #eef5e8; }
+
+    .stats {
+      border: 1px solid #d7e0d0;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      border-bottom: 1px solid #e2e8dc;
+      padding: 7px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f3f8ee;
+      color: #2e432f;
+      font-weight: 700;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+      border: 1px dashed #cdd8c5;
+      border-radius: 10px;
+      padding: 10px;
+      background: #fbfdf8;
+    }
+
+    .legend {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-size: 12px;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+
+    @media (max-width: 980px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="layout">
+    <section class="card canvas-wrap">
+      <h2 class="title">左侧画布: 4 层嵌套网格 + 真实物理 Mask</h2>
+      <canvas id="scene" width="860" height="860" aria-label="Nested grids and sliding mask"></canvas>
+      <div class="legend" style="margin-top:10px;">
+        <span><i class="dot" style="background:var(--l1);"></i>L1 (dx = L4/8)</span>
+        <span><i class="dot" style="background:var(--l2);"></i>L2 (dx = L4/4)</span>
+        <span><i class="dot" style="background:var(--l3);"></i>L3 (dx = L4/2)</span>
+        <span><i class="dot" style="background:var(--l4);"></i>L4 (dx = L4)</span>
+        <span><i class="dot" style="background:var(--accent);"></i>Mask Window</span>
+      </div>
+    </section>
+
+    <aside class="card">
+      <h2 class="title">右侧参数与覆盖统计</h2>
+      <div class="panel">
+        <div class="control">
+          <label for="nSlider"><span>Mask 大小 N (L4 Cell)</span><b id="nValue">25</b></label>
+          <input id="nSlider" type="range" min="1" max="121" step="1" value="25" />
+        </div>
+
+        <div class="control">
+          <label for="dSlider"><span>滑动步长 D (L4 Cell)</span><b id="dValue">8</b></label>
+          <input id="dSlider" type="range" min="1" max="40" step="1" value="8" />
+        </div>
+
+        <div class="control">
+          <label for="pSlider"><span>滑动进度</span><b id="pValue">1 / 256</b></label>
+          <input id="pSlider" type="range" min="0" max="0" step="1" value="0" />
+        </div>
+
+        <div class="btn-row">
+          <button id="playBtn" type="button">播放</button>
+          <button id="pauseBtn" type="button">暂停</button>
+          <button id="resetBtn" type="button">回到起点</button>
+        </div>
+
+        <div class="meta" id="metaInfo"></div>
+
+        <div class="stats">
+          <table>
+            <thead>
+              <tr>
+                <th>层级</th>
+                <th>行索引范围</th>
+                <th>列索引范围</th>
+                <th>覆盖 Cell 数</th>
+              </tr>
+            </thead>
+            <tbody id="statsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    (function () {
+      const GRID_N = 121;
+      const canvas = document.getElementById("scene");
+      const ctx = canvas.getContext("2d");
+
+      const nSlider = document.getElementById("nSlider");
+      const dSlider = document.getElementById("dSlider");
+      const pSlider = document.getElementById("pSlider");
+
+      const nValue = document.getElementById("nValue");
+      const dValue = document.getElementById("dValue");
+      const pValue = document.getElementById("pValue");
+      const metaInfo = document.getElementById("metaInfo");
+      const statsBody = document.getElementById("statsBody");
+
+      const playBtn = document.getElementById("playBtn");
+      const pauseBtn = document.getElementById("pauseBtn");
+      const resetBtn = document.getElementById("resetBtn");
+
+      const levels = [
+        { id: "L1", relFine: 8, color: "#1f6f78" },
+        { id: "L2", relFine: 4, color: "#2f8f5b" },
+        { id: "L3", relFine: 2, color: "#607d3b" },
+        { id: "L4", relFine: 1, color: "#36454f" }
+      ].map((lv) => {
+        const dx = 1 / lv.relFine;
+        const extent = GRID_N * dx;
+        return { ...lv, dx, extent, half: extent / 2 };
+      });
+
+      const L4 = levels.find((l) => l.id === "L4");
+      const worldMin = -L4.half;
+      const worldExtent = L4.extent;
+      const margin = 58;
+      const pix = (canvas.width - margin * 2) / worldExtent;
+
+      let positions = [];
+      let playTimer = null;
+
+      function buildAxis(maxVal, step) {
+        const arr = [];
+        for (let v = 0; v <= maxVal; v += step) arr.push(v);
+        if (arr[arr.length - 1] !== maxVal) arr.push(maxVal);
+        return arr;
+      }
+
+      function buildPositions(N, D) {
+        const maxStart = GRID_N - N;
+        const rows = buildAxis(maxStart, D);
+        const cols = buildAxis(maxStart, D);
+        const out = [];
+        for (let r = 0; r < rows.length; r++) {
+          for (let c = 0; c < cols.length; c++) {
+            out.push({ row: rows[r], col: cols[c] });
+          }
+        }
+        return out;
+      }
+
+      function worldToCanvasX(x) {
+        return margin + (x - worldMin) * pix;
+      }
+
+      function worldToCanvasY(y) {
+        return margin + (y - worldMin) * pix;
+      }
+
+      function drawLevelRect(level) {
+        const x = worldToCanvasX(-level.half);
+        const y = worldToCanvasY(-level.half);
+        const w = level.extent * pix;
+        const h = w;
+
+        ctx.save();
+        ctx.strokeStyle = level.color;
+        ctx.lineWidth = level.id === "L4" ? 2.4 : 2.0;
+        ctx.strokeRect(x, y, w, h);
+
+        ctx.fillStyle = level.color;
+        ctx.font = "bold 14px Avenir Next, sans-serif";
+        ctx.fillText(level.id, x + 6, y + 18);
+        ctx.restore();
+      }
+
+      function drawL4ReferenceGrid() {
+        const stepCell = 10;
+        const x0 = worldToCanvasX(-L4.half);
+        const y0 = worldToCanvasY(-L4.half);
+        const size = L4.extent * pix;
+        const dxPix = L4.dx * pix;
+
+        ctx.save();
+        ctx.strokeStyle = "rgba(70, 84, 90, 0.14)";
+        ctx.lineWidth = 1;
+
+        for (let i = 0; i <= GRID_N; i += stepCell) {
+          const x = x0 + i * dxPix;
+          ctx.beginPath();
+          ctx.moveTo(x, y0);
+          ctx.lineTo(x, y0 + size);
+          ctx.stroke();
+        }
+
+        for (let j = 0; j <= GRID_N; j += stepCell) {
+          const y = y0 + j * dxPix;
+          ctx.beginPath();
+          ctx.moveTo(x0, y);
+          ctx.lineTo(x0 + size, y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function getMaskWorldRect(N, pos) {
+        const left = -L4.half + pos.col * L4.dx;
+        const top = -L4.half + pos.row * L4.dx;
+        const size = N * L4.dx;
+        return {
+          left,
+          top,
+          right: left + size,
+          bottom: top + size,
+          size
+        };
+      }
+
+      function overlapRange(windowMin, windowMax, layerMin, dx) {
+        let start = Math.floor((windowMin - layerMin) / dx);
+        let end = Math.ceil((windowMax - layerMin) / dx) - 1;
+
+        if (end < 0 || start > GRID_N - 1) return null;
+        start = Math.max(0, start);
+        end = Math.min(GRID_N - 1, end);
+        if (start > end) return null;
+        return [start, end];
+      }
+
+      function computeCoverage(level, maskRect) {
+        const layerMin = -level.half;
+        const colRange = overlapRange(maskRect.left, maskRect.right, layerMin, level.dx);
+        const rowRange = overlapRange(maskRect.top, maskRect.bottom, layerMin, level.dx);
+
+        if (!colRange || !rowRange) {
+          return {
+            id: level.id,
+            rowText: "none",
+            colText: "none",
+            count: 0
+          };
+        }
+
+        const rows = rowRange[1] - rowRange[0] + 1;
+        const cols = colRange[1] - colRange[0] + 1;
+
+        return {
+          id: level.id,
+          rowText: `[${rowRange[0]}, ${rowRange[1]}]`,
+          colText: `[${colRange[0]}, ${colRange[1]}]`,
+          count: rows * cols
+        };
+      }
+
+      function renderStats(covs) {
+        statsBody.innerHTML = covs.map((c) => {
+          return `<tr>
+            <td class="mono">${c.id}</td>
+            <td class="mono">${c.rowText}</td>
+            <td class="mono">${c.colText}</td>
+            <td class="mono">${c.count}</td>
+          </tr>`;
+        }).join("");
+      }
+
+      function drawMask(maskRect) {
+        const x = worldToCanvasX(maskRect.left);
+        const y = worldToCanvasY(maskRect.top);
+        const w = maskRect.size * pix;
+
+        ctx.save();
+        ctx.fillStyle = "rgba(200, 90, 55, 0.2)";
+        ctx.strokeStyle = "#c85a37";
+        ctx.lineWidth = 2.2;
+        ctx.fillRect(x, y, w, w);
+        ctx.strokeRect(x, y, w, w);
+        ctx.restore();
+      }
+
+      function drawScene(N, D, pos, posIndex, total) {
+        const maskRect = getMaskWorldRect(N, pos);
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawL4ReferenceGrid();
+        drawLevelRect(levels[3]);
+        drawLevelRect(levels[2]);
+        drawLevelRect(levels[1]);
+        drawLevelRect(levels[0]);
+        drawMask(maskRect);
+
+        const covs = levels.map((lv) => computeCoverage(lv, maskRect));
+        renderStats(covs);
+
+        metaInfo.innerHTML = [
+          `<div><b>当前 L4 Mask 起点:</b> row=${pos.row}, col=${pos.col} (0-based)</div>`,
+          `<div><b>L4 索引窗口:</b> rows [${pos.row}, ${pos.row + N - 1}], cols [${pos.col}, ${pos.col + N - 1}]</div>`,
+          `<div><b>总滑动位置:</b> ${total} (按 D=${D} 逐行扫描, 末行末列保证到达右下角)</div>`,
+          `<div><b>物理窗口边长:</b> ${N.toFixed(0)} * dx(L4)</div>`
+        ].join("");
+
+        pValue.textContent = `${posIndex + 1} / ${total}`;
+      }
+
+      function refreshPositions(keepIndex) {
+        const N = Number(nSlider.value);
+        const D = Number(dSlider.value);
+
+        positions = buildPositions(N, D);
+        pSlider.max = String(Math.max(0, positions.length - 1));
+        let idx = keepIndex ? Number(pSlider.value) : 0;
+        idx = Math.min(idx, positions.length - 1);
+        pSlider.value = String(idx);
+        renderCurrent();
+      }
+
+      function renderCurrent() {
+        const N = Number(nSlider.value);
+        const D = Number(dSlider.value);
+        const idx = Number(pSlider.value);
+        const pos = positions[idx] || { row: 0, col: 0 };
+
+        nValue.textContent = String(N);
+        dValue.textContent = String(D);
+
+        drawScene(N, D, pos, idx, positions.length || 1);
+      }
+
+      function play() {
+        if (playTimer) return;
+        playTimer = setInterval(() => {
+          const max = Number(pSlider.max);
+          let idx = Number(pSlider.value);
+          idx = idx >= max ? 0 : idx + 1;
+          pSlider.value = String(idx);
+          renderCurrent();
+        }, 180);
+      }
+
+      function pause() {
+        if (!playTimer) return;
+        clearInterval(playTimer);
+        playTimer = null;
+      }
+
+      nSlider.addEventListener("input", () => {
+        const N = Number(nSlider.value);
+        if (Number(dSlider.value) > GRID_N - N) {
+          dSlider.value = String(Math.max(1, GRID_N - N));
+        }
+        refreshPositions(false);
+      });
+
+      dSlider.addEventListener("input", () => refreshPositions(false));
+      pSlider.addEventListener("input", renderCurrent);
+
+      playBtn.addEventListener("click", play);
+      pauseBtn.addEventListener("click", pause);
+      resetBtn.addEventListener("click", () => {
+        pause();
+        pSlider.value = "0";
+        renderCurrent();
+      });
+
+      refreshPositions(false);
+    })();
+  </script>
+</body>
+</html>
