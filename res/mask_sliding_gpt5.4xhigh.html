@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nested Grids 与 Physical Mask 滑动对应</title>
+  <style>
+    :root {
+      --bg: #f6f1e8;
+      --panel: rgba(255, 252, 246, 0.88);
+      --panel-strong: rgba(255, 248, 236, 0.96);
+      --ink: #19212c;
+      --muted: #5d6a75;
+      --line: rgba(25, 33, 44, 0.12);
+      --accent: #cc5a2c;
+      --accent-soft: rgba(204, 90, 44, 0.18);
+      --hit: rgba(244, 163, 97, 0.38);
+      --grid: rgba(21, 31, 44, 0.16);
+      --l1: #295c7a;
+      --l2: #2d7b73;
+      --l3: #8da763;
+      --l4: #ce7a19;
+      --shadow: 0 18px 40px rgba(45, 37, 28, 0.12);
+      --radius: 22px;
+      --radius-sm: 14px;
+      --font-ui: "Avenir Next", "Helvetica Neue", "PingFang SC", "Noto Sans SC", sans-serif;
+      --font-data: "JetBrains Mono", "SFMono-Regular", "Consolas", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(255, 223, 182, 0.45), transparent 34%),
+        radial-gradient(circle at 100% 0%, rgba(150, 194, 203, 0.28), transparent 28%),
+        linear-gradient(180deg, #fbf7ef 0%, #f2ece2 100%);
+      color: var(--ink);
+      font-family: var(--font-ui);
+    }
+
+    .app {
+      width: min(1440px, calc(100vw - 32px));
+      margin: 16px auto;
+      padding: 18px;
+      border-radius: 28px;
+      background: rgba(255, 252, 247, 0.62);
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.8fr);
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .hero-card,
+    .summary-card {
+      padding: 18px 20px;
+      border-radius: var(--radius);
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(25, 33, 44, 0.06);
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 14px 0 10px;
+      font-size: clamp(1.7rem, 2.8vw, 2.7rem);
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+
+    .hero p,
+    .summary-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .summary-card {
+      display: grid;
+      gap: 12px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .meta-item {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: var(--panel-strong);
+      border: 1px solid rgba(25, 33, 44, 0.08);
+    }
+
+    .meta-item .label {
+      display: block;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .meta-item .value {
+      font-family: var(--font-data);
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.9fr);
+      gap: 18px;
+    }
+
+    .panel {
+      border-radius: var(--radius);
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      padding: 16px 18px 0;
+      flex-wrap: wrap;
+    }
+
+    .panel-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .panel-subtitle {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .swatch {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      border: 1px solid rgba(25, 33, 44, 0.16);
+    }
+
+    .viz-shell {
+      padding: 14px 16px 18px;
+    }
+
+    .canvas-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1.09;
+      border-radius: 20px;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(250, 244, 235, 0.92)),
+        radial-gradient(circle at top, rgba(255, 214, 168, 0.32), transparent 36%);
+      border: 1px solid rgba(25, 33, 44, 0.08);
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .controls {
+      padding: 14px 16px 18px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .control-block {
+      padding: 14px;
+      border-radius: 18px;
+      background: var(--panel-strong);
+      border: 1px solid rgba(25, 33, 44, 0.08);
+      display: grid;
+      gap: 10px;
+    }
+
+    .control-topline {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .control-topline strong {
+      font-size: 0.98rem;
+    }
+
+    .control-topline span {
+      font-family: var(--font-data);
+      font-size: 0.94rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .control-help {
+      font-size: 0.88rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      appearance: none;
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(204, 90, 44, 0.18), rgba(41, 92, 122, 0.15));
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fffaf1;
+      border: 2px solid var(--accent);
+      box-shadow: 0 4px 10px rgba(204, 90, 44, 0.2);
+      cursor: pointer;
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fffaf1;
+      border: 2px solid var(--accent);
+      box-shadow: 0 4px 10px rgba(204, 90, 44, 0.2);
+      cursor: pointer;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 16px;
+      font: inherit;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    .primary-btn {
+      background: linear-gradient(135deg, #cb5b2a, #e08d3c);
+      color: #fffaf5;
+      box-shadow: 0 10px 18px rgba(203, 91, 42, 0.22);
+    }
+
+    .secondary-btn {
+      background: rgba(25, 33, 44, 0.08);
+      color: var(--ink);
+    }
+
+    .note {
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(247, 239, 222, 0.88), rgba(252, 248, 240, 0.92));
+      border: 1px solid rgba(25, 33, 44, 0.08);
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 0.92rem;
+    }
+
+    .stats-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .stat-card {
+      padding: 14px;
+      border-radius: 18px;
+      background: var(--panel-strong);
+      border: 1px solid rgba(25, 33, 44, 0.08);
+      border-left: 6px solid var(--accent);
+      display: grid;
+      gap: 10px;
+    }
+
+    .stat-card[data-level="L1"] { border-left-color: var(--l1); }
+    .stat-card[data-level="L2"] { border-left-color: var(--l2); }
+    .stat-card[data-level="L3"] { border-left-color: var(--l3); }
+    .stat-card[data-level="L4"] { border-left-color: var(--l4); }
+
+    .stat-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+
+    .stat-head strong {
+      font-size: 1rem;
+      letter-spacing: -0.02em;
+    }
+
+    .stat-head span {
+      font-family: var(--font-data);
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .stat-detail {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px 10px;
+      align-items: baseline;
+      font-size: 0.9rem;
+    }
+
+    .stat-detail .k {
+      color: var(--muted);
+    }
+
+    .stat-detail .v {
+      font-family: var(--font-data);
+      font-weight: 700;
+    }
+
+    .stat-detail .u {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    @media (max-width: 1080px) {
+      .hero,
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .canvas-wrap {
+        aspect-ratio: 1 / 1.18;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .app {
+        width: calc(100vw - 16px);
+        margin: 8px auto;
+        padding: 10px;
+        border-radius: 20px;
+      }
+
+      .hero-card,
+      .summary-card,
+      .controls,
+      .viz-shell {
+        padding-left: 12px;
+        padding-right: 12px;
+      }
+
+      .panel-header {
+        padding-left: 12px;
+        padding-right: 12px;
+      }
+
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .stat-detail {
+        grid-template-columns: auto 1fr;
+      }
+
+      .stat-detail .u {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="hero">
+      <div class="hero-card">
+        <div class="eyebrow">Nested Grids / Physical Mask</div>
+        <h1>4 层 121×121 嵌套网格中的真实物理遮罩滑动对应</h1>
+        <p>
+          左侧按真实物理比例自上而下绘制 L1→L4。红色虚线表示定义在
+          L4 上的真实 Mask，橙色块表示各层中与该物理窗口发生真实相交的离散 Cell 包络。
+        </p>
+      </div>
+      <div class="summary-card">
+        <div class="meta-grid">
+          <div class="meta-item">
+            <span class="label">共享中心</span>
+            <span class="value">L1 = L2 = L3 = L4</span>
+          </div>
+          <div class="meta-item">
+            <span class="label">Cell 数</span>
+            <span class="value">121 × 121</span>
+          </div>
+          <div class="meta-item">
+            <span class="label">分辨率关系</span>
+            <span class="value">dx(L4):dx(L3):dx(L2):dx(L1)=8:4:2:1</span>
+          </div>
+          <div class="meta-item">
+            <span class="label">统计规则</span>
+            <span class="value">真实物理相交, 0-based 索引</span>
+          </div>
+        </div>
+        <p>
+          由于四层共享同一个中心、且每层都是奇数边长 121，因此 L4 的 cell 边界一般不会与更细层的 cell 边界整齐重合。
+          所以“物理窗口尺寸”与“命中的离散 cell 数”之间会出现真实的跳变。
+        </p>
+      </div>
+    </section>
+
+    <main class="layout">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">左侧画布</div>
+            <div class="panel-subtitle">按物理尺度比例绘制 L1、L2、L3、L4 以及当前 Mask</div>
+          </div>
+          <div class="legend">
+            <span class="legend-item"><span class="swatch" style="background: var(--accent-soft); border-style: dashed; border-color: var(--accent);"></span>真实 Mask</span>
+            <span class="legend-item"><span class="swatch" style="background: var(--hit);"></span>命中 Cell 包络</span>
+            <span class="legend-item"><span class="swatch" style="background: rgba(25, 33, 44, 0.06);"></span>网格区域</span>
+          </div>
+        </div>
+        <div class="viz-shell">
+          <div class="canvas-wrap">
+            <canvas id="vizCanvas"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">参数与实时统计</div>
+            <div class="panel-subtitle">Mask 尺寸与滑动步长均以 L4 的 Cell 为单位</div>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div class="control-block">
+            <div class="control-topline">
+              <strong>N: Mask 尺寸</strong>
+              <span id="nValue">17</span>
+            </div>
+            <input id="nSlider" type="range" min="1" max="121" step="1" value="17" />
+            <div class="control-help">
+              真实物理窗口大小定义为 L4 上 <strong>N × N</strong> 个 Cell。
+            </div>
+          </div>
+
+          <div class="control-block">
+            <div class="control-topline">
+              <strong>D: 滑动步长</strong>
+              <span id="dValue">8</span>
+            </div>
+            <input id="dSlider" type="range" min="1" max="121" step="1" value="8" />
+            <div class="control-help">
+              以 <strong>D</strong> 个 L4 Cell 为步长生成锚点；若末端不能整除，则自动补齐到最右/最下。
+            </div>
+          </div>
+
+          <div class="control-block">
+            <div class="control-topline">
+              <strong>进度</strong>
+              <span id="progressLabel">1 / 196</span>
+            </div>
+            <input id="progressSlider" type="range" min="0" max="0" step="1" value="0" />
+            <div class="button-row">
+              <button id="playButton" class="primary-btn" type="button">播放</button>
+              <button id="resetButton" class="secondary-btn" type="button">回到起点</button>
+            </div>
+            <div class="control-help" id="progressHelp">
+              按行优先滑动：从左上角开始，先横向，再换行，直到右下角。
+            </div>
+          </div>
+
+          <div class="note">
+            <strong>当前定义：</strong>
+            红色虚线始终表示“真实物理窗口”，橙色矩形则是每层中被该窗口碰到的离散 Cell 范围。
+            两者之间的差，正是 Nested Grids 与 Mask 在离散化后出现的对应关系。
+          </div>
+
+          <div id="statsGrid" class="stats-grid"></div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script>
+    const GRID_SIZE = 121;
+    const HALF_INDEX = GRID_SIZE / 2;
+    const LEVELS = [
+      { name: "L1", cellSize: 1, color: "#295c7a" },
+      { name: "L2", cellSize: 2, color: "#2d7b73" },
+      { name: "L3", cellSize: 4, color: "#8da763" },
+      { name: "L4", cellSize: 8, color: "#ce7a19" }
+    ];
+
+    const state = {
+      N: 17,
+      D: 8,
+      progress: 0,
+      steps: [],
+      anchors: [],
+      playing: false,
+      lastFrameTime: 0
+    };
+
+    const dom = {
+      canvas: document.getElementById("vizCanvas"),
+      nSlider: document.getElementById("nSlider"),
+      dSlider: document.getElementById("dSlider"),
+      progressSlider: document.getElementById("progressSlider"),
+      nValue: document.getElementById("nValue"),
+      dValue: document.getElementById("dValue"),
+      progressLabel: document.getElementById("progressLabel"),
+      progressHelp: document.getElementById("progressHelp"),
+      playButton: document.getElementById("playButton"),
+      resetButton: document.getElementById("resetButton"),
+      statsGrid: document.getElementById("statsGrid")
+    };
+
+    function getAxisPositions(windowSize, stride) {
+      const maxStart = GRID_SIZE - windowSize;
+      if (maxStart <= 0) {
+        return [0];
+      }
+
+      const positions = [];
+      for (let pos = 0; pos <= maxStart; pos += stride) {
+        positions.push(pos);
+      }
+      if (positions[positions.length - 1] !== maxStart) {
+        positions.push(maxStart);
+      }
+      return positions;
+    }
+
+    function rebuildSteps() {
+      state.anchors = getAxisPositions(state.N, state.D);
+      state.steps = [];
+
+      for (let rowIndex = 0; rowIndex < state.anchors.length; rowIndex += 1) {
+        for (let colIndex = 0; colIndex < state.anchors.length; colIndex += 1) {
+          state.steps.push({
+            rowStart: state.anchors[rowIndex],
+            colStart: state.anchors[colIndex],
+            rowIndex,
+            colIndex
+          });
+        }
+      }
+
+      if (state.progress >= state.steps.length) {
+        state.progress = Math.max(0, state.steps.length - 1);
+      }
+
+      dom.progressSlider.max = String(Math.max(0, state.steps.length - 1));
+      dom.progressSlider.value = String(state.progress);
+    }
+
+    function boundaryAt(levelCellSize, boundaryIndex) {
+      return (-HALF_INDEX + boundaryIndex) * levelCellSize;
+    }
+
+    function getCurrentStep() {
+      return state.steps[state.progress] || {
+        rowStart: 0,
+        colStart: 0,
+        rowIndex: 0,
+        colIndex: 0
+      };
+    }
+
+    function getMaskPhysicalBounds() {
+      const step = getCurrentStep();
+      const dxL4 = LEVELS[LEVELS.length - 1].cellSize;
+      return {
+        x0: boundaryAt(dxL4, step.colStart),
+        x1: boundaryAt(dxL4, step.colStart + state.N),
+        y0: boundaryAt(dxL4, step.rowStart),
+        y1: boundaryAt(dxL4, step.rowStart + state.N)
+      };
+    }
+
+    function getCoverageForLevel(level, mask) {
+      const left = boundaryAt(level.cellSize, 0);
+      const right = boundaryAt(level.cellSize, GRID_SIZE);
+
+      const overlapX0 = Math.max(mask.x0, left);
+      const overlapX1 = Math.min(mask.x1, right);
+      const overlapY0 = Math.max(mask.y0, left);
+      const overlapY1 = Math.min(mask.y1, right);
+
+      if (overlapX1 <= overlapX0 || overlapY1 <= overlapY0) {
+        return {
+          hasOverlap: false,
+          xStart: null,
+          xEnd: null,
+          yStart: null,
+          yEnd: null,
+          countX: 0,
+          countY: 0,
+          countTotal: 0
+        };
+      }
+
+      const eps = 1e-9;
+      const xStart = Math.max(0, Math.floor((overlapX0 - left + eps) / level.cellSize));
+      const xEnd = Math.min(
+        GRID_SIZE - 1,
+        Math.ceil((overlapX1 - left - eps) / level.cellSize) - 1
+      );
+      const yStart = Math.max(0, Math.floor((overlapY0 - left + eps) / level.cellSize));
+      const yEnd = Math.min(
+        GRID_SIZE - 1,
+        Math.ceil((overlapY1 - left - eps) / level.cellSize) - 1
+      );
+
+      const countX = Math.max(0, xEnd - xStart + 1);
+      const countY = Math.max(0, yEnd - yStart + 1);
+
+      return {
+        hasOverlap: countX > 0 && countY > 0,
+        xStart,
+        xEnd,
+        yStart,
+        yEnd,
+        countX,
+        countY,
+        countTotal: countX * countY,
+        hitX0: boundaryAt(level.cellSize, xStart),
+        hitX1: boundaryAt(level.cellSize, xEnd + 1),
+        hitY0: boundaryAt(level.cellSize, yStart),
+        hitY1: boundaryAt(level.cellSize, yEnd + 1)
+      };
+    }
+
+    function getAllCoverage(mask) {
+      return LEVELS.map((level) => ({
+        level,
+        coverage: getCoverageForLevel(level, mask)
+      }));
+    }
+
+    function syncControlText(mask, coverages) {
+      const step = getCurrentStep();
+      const totalSteps = Math.max(1, state.steps.length);
+      const windowSpan = state.N * LEVELS[LEVELS.length - 1].cellSize;
+
+      dom.nValue.textContent = `${state.N} × ${state.N}`;
+      dom.dValue.textContent = `${state.D} cells`;
+      dom.progressLabel.textContent = `${state.progress + 1} / ${totalSteps}`;
+      dom.progressHelp.textContent =
+        `L4 锚点 row=${step.rowStart}, col=${step.colStart} | ` +
+        `当前窗口 rows ${step.rowStart}..${step.rowStart + state.N - 1}, ` +
+        `cols ${step.colStart}..${step.colStart + state.N - 1} | ` +
+        `物理边长 ${windowSpan}`;
+
+      const stepCard = `
+        <div class="stat-card" data-level="L4">
+          <div class="stat-head">
+            <strong>当前 L4 锚点</strong>
+            <span>row-major / 0-based</span>
+          </div>
+          <div class="stat-detail">
+            <span class="k">起始行列</span>
+            <span class="v">row ${step.rowStart}, col ${step.colStart}</span>
+            <span class="u">anchor</span>
+
+            <span class="k">窗口索引</span>
+            <span class="v">rows ${step.rowStart}..${step.rowStart + state.N - 1}, cols ${step.colStart}..${step.colStart + state.N - 1}</span>
+            <span class="u">L4</span>
+
+            <span class="k">锚点总数</span>
+            <span class="v">${state.anchors.length} × ${state.anchors.length} = ${state.steps.length}</span>
+            <span class="u">steps</span>
+
+            <span class="k">Mask 物理边长</span>
+            <span class="v">${windowSpan} × ${windowSpan}</span>
+            <span class="u">relative units</span>
+          </div>
+        </div>
+      `;
+
+      const levelCards = coverages.map(({ level, coverage }) => {
+        const relative = LEVELS[LEVELS.length - 1].cellSize / level.cellSize;
+        const dxText =
+          relative === 1 ? "dx = L4" : `dx = L4 / ${relative}`;
+
+        const detail = coverage.hasOverlap
+          ? `
+            <span class="k">列索引</span>
+            <span class="v">${coverage.xStart} .. ${coverage.xEnd}</span>
+            <span class="u">${coverage.countX} cols</span>
+
+            <span class="k">行索引</span>
+            <span class="v">${coverage.yStart} .. ${coverage.yEnd}</span>
+            <span class="u">${coverage.countY} rows</span>
+
+            <span class="k">总 Cell 数</span>
+            <span class="v">${coverage.countX} × ${coverage.countY} = ${coverage.countTotal}</span>
+            <span class="u">covered</span>
+          `
+          : `
+            <span class="k">列索引</span>
+            <span class="v">无重叠</span>
+            <span class="u">0 cols</span>
+
+            <span class="k">行索引</span>
+            <span class="v">无重叠</span>
+            <span class="u">0 rows</span>
+
+            <span class="k">总 Cell 数</span>
+            <span class="v">0</span>
+            <span class="u">covered</span>
+          `;
+
+        return `
+          <div class="stat-card" data-level="${level.name}">
+            <div class="stat-head">
+              <strong>${level.name}</strong>
+              <span>${dxText}</span>
+            </div>
+            <div class="stat-detail">
+              ${detail}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      dom.statsGrid.innerHTML = stepCard + levelCards;
+    }
+
+    function setupCanvas() {
+      const rect = dom.canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      dom.canvas.width = Math.round(rect.width * dpr);
+      dom.canvas.height = Math.round(rect.height * dpr);
+      const ctx = dom.canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { ctx, width: rect.width, height: rect.height };
+    }
+
+    function toCanvasCoordinate(value, level, box, axis) {
+      const extent = GRID_SIZE * level.cellSize;
+      const start = axis === "x" ? box.left : box.top;
+      const size = box.size;
+      return start + ((value + extent / 2) / extent) * size;
+    }
+
+    function drawGrid(ctx, box) {
+      const spacing = box.size / GRID_SIZE;
+      let step = 1;
+      if (spacing < 3.4) step = 2;
+      if (spacing < 2.0) step = 4;
+      if (spacing < 1.2) step = 8;
+      if (spacing < 0.75) step = 16;
+
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(21, 31, 44, 0.14)";
+      ctx.beginPath();
+      for (let i = 0; i <= GRID_SIZE; i += step) {
+        const x = box.left + (i / GRID_SIZE) * box.size;
+        const y = box.top + (i / GRID_SIZE) * box.size;
+        ctx.moveTo(x, box.top);
+        ctx.lineTo(x, box.top + box.size);
+        ctx.moveTo(box.left, y);
+        ctx.lineTo(box.left + box.size, y);
+      }
+      ctx.stroke();
+    }
+
+    function drawPanelLabel(ctx, text, subtext, box, color) {
+      ctx.fillStyle = color;
+      ctx.font = '700 14px "Avenir Next", "Helvetica Neue", "PingFang SC", sans-serif';
+      ctx.fillText(text, box.left, box.labelY);
+      ctx.fillStyle = "rgba(25, 33, 44, 0.62)";
+      ctx.font = '12px "JetBrains Mono", "SFMono-Regular", monospace';
+      ctx.fillText(subtext, box.left, box.labelY + 16);
+    }
+
+    function drawLevel(ctx, box, level, mask, coverage) {
+      drawPanelLabel(
+        ctx,
+        `${level.name} · 121 × 121`,
+        `physical span = ${GRID_SIZE * level.cellSize}, dx = ${level.cellSize}`,
+        box,
+        level.color
+      );
+
+      ctx.save();
+      ctx.fillStyle = "rgba(255, 255, 255, 0.74)";
+      ctx.strokeStyle = "rgba(25, 33, 44, 0.08)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.rect(box.left, box.top, box.size, box.size);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.rect(box.left, box.top, box.size, box.size);
+      ctx.clip();
+
+      if (coverage.hasOverlap) {
+        const hx0 = toCanvasCoordinate(coverage.hitX0, level, box, "x");
+        const hx1 = toCanvasCoordinate(coverage.hitX1, level, box, "x");
+        const hy0 = toCanvasCoordinate(coverage.hitY0, level, box, "y");
+        const hy1 = toCanvasCoordinate(coverage.hitY1, level, box, "y");
+        ctx.fillStyle = "rgba(244, 163, 97, 0.38)";
+        ctx.fillRect(hx0, hy0, hx1 - hx0, hy1 - hy0);
+      }
+
+      drawGrid(ctx, box);
+
+      const center = box.left + box.size / 2;
+      ctx.strokeStyle = "rgba(25, 33, 44, 0.34)";
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(center, box.top);
+      ctx.lineTo(center, box.top + box.size);
+      ctx.moveTo(box.left, center - box.left + box.top);
+      ctx.lineTo(box.left + box.size, center - box.left + box.top);
+      ctx.stroke();
+
+      const mx0 = toCanvasCoordinate(mask.x0, level, box, "x");
+      const mx1 = toCanvasCoordinate(mask.x1, level, box, "x");
+      const my0 = toCanvasCoordinate(mask.y0, level, box, "y");
+      const my1 = toCanvasCoordinate(mask.y1, level, box, "y");
+      ctx.setLineDash([8, 6]);
+      ctx.strokeStyle = "#cc5a2c";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(mx0, my0, mx1 - mx0, my1 - my0);
+      ctx.setLineDash([]);
+
+      ctx.restore();
+
+      ctx.strokeStyle = level.color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(box.left, box.top, box.size, box.size);
+
+      ctx.fillStyle = "rgba(25, 33, 44, 0.72)";
+      ctx.font = '12px "JetBrains Mono", "SFMono-Regular", monospace';
+      const badge = coverage.hasOverlap
+        ? `x ${coverage.xStart}..${coverage.xEnd} | y ${coverage.yStart}..${coverage.yEnd} | ${coverage.countTotal} cells`
+        : "no overlap";
+      ctx.fillText(badge, box.left, box.top + box.size + 18);
+    }
+
+    function draw() {
+      const { ctx, width, height } = setupCanvas();
+      ctx.clearRect(0, 0, width, height);
+
+      const padX = 24;
+      const padTop = 22;
+      const padBottom = 26;
+      const labelHeight = 20;
+      const infoHeight = 22;
+      const gap = 20;
+
+      const fixedHeight =
+        padTop + padBottom +
+        LEVELS.length * (labelHeight + infoHeight) +
+        (LEVELS.length - 1) * gap;
+      const maxSquareByHeight = (height - fixedHeight) / (15 / 8);
+      const maxSquareByWidth = width - padX * 2 - 20;
+      const maxSquare = Math.max(
+        56,
+        Math.min(maxSquareByHeight, maxSquareByWidth, 430)
+      );
+      const base = maxSquare / 8;
+
+      const rows = [];
+      let cursorY = padTop;
+      const centerX = width / 2;
+
+      LEVELS.forEach((level) => {
+        const size = base * level.cellSize;
+        const left = centerX - size / 2;
+        const top = cursorY + labelHeight;
+        rows.push({
+          level,
+          size,
+          left,
+          top,
+          labelY: cursorY + 4
+        });
+        cursorY = top + size + infoHeight + gap;
+      });
+
+      ctx.fillStyle = "rgba(255, 255, 255, 0.76)";
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.strokeStyle = "rgba(25, 33, 44, 0.08)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(centerX, padTop);
+      ctx.lineTo(centerX, height - padBottom);
+      ctx.stroke();
+
+      const mask = getMaskPhysicalBounds();
+      const coverages = getAllCoverage(mask);
+
+      rows.forEach((row, index) => {
+        drawLevel(ctx, row, row.level, mask, coverages[index].coverage);
+      });
+
+      syncControlText(mask, coverages);
+    }
+
+    function applySliderValues() {
+      state.N = Number(dom.nSlider.value);
+      state.D = Number(dom.dSlider.value);
+      rebuildSteps();
+      draw();
+    }
+
+    function stepForward() {
+      if (state.steps.length === 0) {
+        return;
+      }
+      state.progress = (state.progress + 1) % state.steps.length;
+      dom.progressSlider.value = String(state.progress);
+      draw();
+    }
+
+    function animationLoop(timestamp) {
+      if (state.playing) {
+        if (!state.lastFrameTime || timestamp - state.lastFrameTime >= 360) {
+          state.lastFrameTime = timestamp;
+          stepForward();
+        }
+      }
+      requestAnimationFrame(animationLoop);
+    }
+
+    dom.nSlider.addEventListener("input", () => {
+      applySliderValues();
+    });
+
+    dom.dSlider.addEventListener("input", () => {
+      applySliderValues();
+    });
+
+    dom.progressSlider.addEventListener("input", () => {
+      state.progress = Number(dom.progressSlider.value);
+      draw();
+    });
+
+    dom.playButton.addEventListener("click", () => {
+      state.playing = !state.playing;
+      state.lastFrameTime = 0;
+      dom.playButton.textContent = state.playing ? "暂停" : "播放";
+    });
+
+    dom.resetButton.addEventListener("click", () => {
+      state.progress = 0;
+      dom.progressSlider.value = "0";
+      draw();
+    });
+
+    window.addEventListener("resize", draw);
+
+    rebuildSteps();
+    draw();
+    requestAnimationFrame(animationLoop);
+  </script>
+</body>
+</html>

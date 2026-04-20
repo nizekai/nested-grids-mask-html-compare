@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nested Grids &amp; Physical Mask Sliding Demo</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel-bg: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e0e0e8;
+    --text-dim: #8888a0;
+    --accent: #6c8cff;
+    --l1: #4fc3f7;
+    --l2: #66bb6a;
+    --l3: #ffa726;
+    --l4: #ef5350;
+    --mask: #ab47bc;
+    --mask-fill: rgba(171, 71, 188, 0.18);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .container {
+    display: flex;
+    width: 96vw;
+    height: 94vh;
+    gap: 16px;
+  }
+  .canvas-wrap {
+    flex: 1.1;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  canvas { display: block; }
+  .panel {
+    flex: 0.9;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .panel h1 {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #fff;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+  }
+  .panel h1 span { color: var(--accent); }
+  .ctrl-group { display: flex; flex-direction: column; gap: 6px; }
+  .ctrl-group label {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .ctrl-group label .val { color: #fff; font-weight: 600; }
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #fff;
+    cursor: pointer;
+  }
+  .btn-row { display: flex; gap: 8px; }
+  .btn {
+    flex: 1;
+    padding: 8px 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .info-section {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .info-section h2 {
+    font-size: 13px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .layer-row {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 4px 10px;
+    font-size: 12px;
+    align-items: baseline;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .layer-row:last-child { border-bottom: none; }
+  .layer-tag {
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-align: center;
+    font-size: 11px;
+  }
+  .layer-detail { color: var(--text-dim); line-height: 1.5; }
+  .layer-detail b { color: #fff; }
+  .pos-display {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-align: center;
+    padding: 6px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 6px;
+  }
+  .pos-display b { color: var(--mask); }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 11px;
+    padding: 8px 0 0;
+  }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="canvas-wrap">
+    <canvas id="cv"></canvas>
+  </div>
+  <div class="panel">
+    <h1>Nested Grids &amp; <span>Mask Sliding</span></h1>
+
+    <div class="ctrl-group">
+      <label>Mask size N (L4 cells) <span class="val" id="nVal">20</span></label>
+      <input type="range" id="nSlider" min="3" max="80" value="20">
+    </div>
+    <div class="ctrl-group">
+      <label>Stride D (L4 cells) <span class="val" id="dVal">5</span></label>
+      <input type="range" id="dSlider" min="1" max="30" value="5">
+    </div>
+    <div class="ctrl-group">
+      <label>Animation speed <span class="val" id="speedVal">3</span> steps/s</label>
+      <input type="range" id="speedSlider" min="1" max="20" value="3">
+    </div>
+    <div class="ctrl-group">
+      <label>Progress <span class="val" id="progVal">0%</span></label>
+      <input type="range" id="progSlider" min="0" max="1000" value="0">
+    </div>
+
+    <div class="btn-row">
+      <button class="btn" id="playBtn">&#9654; Play</button>
+      <button class="btn" id="resetBtn">&#8634; Reset</button>
+    </div>
+
+    <div class="pos-display" id="posDisplay">Mask position: (0, 0) &mdash; Step <b>0</b> / <b>0</b></div>
+
+    <div class="info-section">
+      <h2>Covered Cells per Layer</h2>
+      <div id="layerInfo"></div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:var(--l1)"></div>L1 (finest)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--l2)"></div>L2</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--l3)"></div>L3</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--l4)"></div>L4 (coarsest)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--mask)"></div>Mask</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const GRID = 121;
+const LAYERS = [
+  { name: 'L1', factor: 8,  color: '#4fc3f7' },
+  { name: 'L2', factor: 4,  color: '#66bb6a' },
+  { name: 'L3', factor: 2,  color: '#ffa726' },
+  { name: 'L4', factor: 1,  color: '#ef5350' },
+];
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const wrap = cv.parentElement;
+
+let N = 20, D = 5, speed = 3;
+let playing = false, progress = 0, lastTime = 0;
+
+function resize() {
+  const s = Math.min(wrap.clientWidth - 20, wrap.clientHeight - 20);
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = s * dpr;
+  cv.height = s * dpr;
+  cv.style.width = s + 'px';
+  cv.style.height = s + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw(s);
+}
+
+function totalSteps() {
+  const nPos = Math.floor((GRID - N) / D) + 1;
+  return nPos * nPos;
+}
+
+function stepFromProgress(p) {
+  const ts = totalSteps();
+  if (ts <= 1) return 0;
+  return Math.floor(p * (ts - 1));
+}
+
+function posFromStep(step) {
+  const nPos = Math.floor((GRID - N) / D) + 1;
+  const r = Math.floor(step / nPos) * D;
+  const c = (step % nPos) * D;
+  return [r, c];
+}
+
+function coveredCells(maskR, maskC, factor) {
+  const scale = factor;
+  const half = (GRID - 1) / 2; // 60
+  const rMin = Math.ceil(half + scale * (maskR - half - 0.5));
+  const rMax = Math.floor(half + scale * (maskR + N - half - 0.5));
+  const cMin = Math.ceil(half + scale * (maskC - half - 0.5));
+  const cMax = Math.floor(half + scale * (maskC + N - half - 0.5));
+  const iMin = Math.max(0, rMin);
+  const iMax = Math.min(GRID - 1, rMax);
+  const jMin = Math.max(0, cMin);
+  const jMax = Math.min(GRID - 1, cMax);
+  const count = (iMax >= iMin && jMax >= jMin) ? (iMax - iMin + 1) * (jMax - jMin + 1) : 0;
+  return { iMin, iMax, jMin, jMax, count, valid: count > 0 };
+}
+
+function draw(size) {
+  const pad = 28;
+  const l4Size = size - 2 * pad;
+  const cx = size / 2, cy = size / 2;
+  const step = stepFromProgress(progress);
+  const [maskR, maskC] = posFromStep(step);
+
+  ctx.clearRect(0, 0, size, size);
+
+  // Background
+  ctx.fillStyle = '#12141c';
+  ctx.fillRect(0, 0, size, size);
+
+  // Grid lines (every 10 cells for L4)
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= GRID; i += 10) {
+    const x = pad + (i / GRID) * l4Size;
+    const y = pad + (i / GRID) * l4Size;
+    ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, pad + l4Size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(pad + l4Size, y); ctx.stroke();
+  }
+
+  // Layer boundaries (concentric, centered)
+  LAYERS.forEach((ly, idx) => {
+    const ext = l4Size / ly.factor;
+    const x = cx - ext / 2, y = cy - ext / 2;
+    ctx.strokeStyle = ly.color;
+    ctx.lineWidth = idx === 0 ? 2.5 : 1.8;
+    ctx.globalAlpha = 0.85;
+    ctx.strokeRect(x, y, ext, ext);
+    ctx.globalAlpha = 1;
+
+    // Label
+    ctx.fillStyle = ly.color;
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    const label = `${ly.name} (${GRID}\u00d7${GRID})`;
+    const lx = x + 4, ly2 = y + 4;
+    ctx.globalAlpha = 0.9;
+    ctx.fillText(label, lx, ly2);
+    ctx.globalAlpha = 1;
+  });
+
+  // Center crosshair
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(cx - 12, cy); ctx.lineTo(cx + 12, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, cy - 12); ctx.lineTo(cx, cy + 12); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Mask
+  const cellPx = l4Size / GRID;
+  const mx = pad + maskC * cellPx;
+  const my = pad + maskR * cellPx;
+  const mw = N * cellPx;
+  const mh = N * cellPx;
+
+  ctx.fillStyle = 'rgba(171, 71, 188, 0.18)';
+  ctx.fillRect(mx, my, mw, mh);
+  ctx.strokeStyle = '#ab47bc';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(mx, my, mw, mh);
+
+  // Mask label
+  ctx.fillStyle = '#ab47bc';
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(`Mask ${N}\u00d7${N}`, mx + mw / 2, my - 4);
+
+  // Mask corner dots
+  ctx.fillStyle = '#e040fb';
+  [[mx, my], [mx + mw, my], [mx, my + mh], [mx + mw, my + mh]].forEach(([x, y]) => {
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+  });
+
+  updateInfo(maskR, maskC, step);
+}
+
+function updateInfo(maskR, maskC, step) {
+  const ts = totalSteps();
+  document.getElementById('posDisplay').innerHTML =
+    `Mask position: (<b>${maskR}</b>, <b>${maskC}</b>) on L4 &mdash; Step <b>${step}</b> / <b>${ts - 1}</b>`;
+
+  let html = '';
+  LAYERS.forEach(ly => {
+    const c = coveredCells(maskR, maskC, ly.factor);
+    const pct = ((c.count / (GRID * GRID)) * 100).toFixed(2);
+    const range = c.valid
+      ? `rows [${c.iMin}, ${c.iMax}], cols [${c.jMin}, ${c.jMax}]`
+      : '<i>no overlap</i>';
+    html += `<div class="layer-row">
+      <span class="layer-tag" style="background:${ly.color}22;color:${ly.color};border:1px solid ${ly.color}55">${ly.name}</span>
+      <span class="layer-detail">
+        <b>${c.count}</b> cells (${pct}%) &middot; ${range}
+      </span>
+    </div>`;
+  });
+  document.getElementById('layerInfo').innerHTML = html;
+}
+
+function animate(time) {
+  if (!playing) return;
+  if (!lastTime) lastTime = time;
+  const dt = (time - lastTime) / 1000;
+  lastTime = time;
+  const ts = totalSteps();
+  if (ts > 1) {
+    progress += (speed * dt) / (ts - 1);
+    if (progress >= 1) { progress = 1; playing = false; document.getElementById('playBtn').classList.remove('active'); document.getElementById('playBtn').textContent = '\u25B6 Play'; }
+  }
+  document.getElementById('progSlider').value = Math.round(progress * 1000);
+  document.getElementById('progVal').textContent = (progress * 100).toFixed(1) + '%';
+  const size = parseFloat(cv.style.width);
+  draw(size);
+  requestAnimationFrame(animate);
+}
+
+function refresh() {
+  const size = parseFloat(cv.style.width);
+  draw(size);
+}
+
+// Event bindings
+document.getElementById('nSlider').addEventListener('input', e => {
+  N = +e.target.value;
+  document.getElementById('nVal').textContent = N;
+  refresh();
+});
+document.getElementById('dSlider').addEventListener('input', e => {
+  D = +e.target.value;
+  document.getElementById('dVal').textContent = D;
+  refresh();
+});
+document.getElementById('speedSlider').addEventListener('input', e => {
+  speed = +e.target.value;
+  document.getElementById('speedVal').textContent = speed;
+});
+document.getElementById('progSlider').addEventListener('input', e => {
+  progress = +e.target.value / 1000;
+  document.getElementById('progVal').textContent = (progress * 100).toFixed(1) + '%';
+  refresh();
+});
+document.getElementById('playBtn').addEventListener('click', function() {
+  if (progress >= 1) { progress = 0; document.getElementById('progSlider').value = 0; document.getElementById('progVal').textContent = '0%'; }
+  playing = !playing;
+  lastTime = 0;
+  this.classList.toggle('active', playing);
+  this.textContent = playing ? '\u23F8 Pause' : '\u25B6 Play';
+  if (playing) requestAnimationFrame(animate);
+});
+document.getElementById('resetBtn').addEventListener('click', () => {
+  progress = 0; playing = false; lastTime = 0;
+  document.getElementById('progSlider').value = 0;
+  document.getElementById('progVal').textContent = '0%';
+  document.getElementById('playBtn').classList.remove('active');
+  document.getElementById('playBtn').textContent = '\u25B6 Play';
+  refresh();
+});
+
+window.addEventListener('resize', resize);
+resize();
+</script>
+</body>
+</html>

@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Nested Grids & Physical Mask Demo</title>
+    <style>
+        body {
+            display: flex;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+        }
+        canvas {
+            border: 2px solid #333;
+            background-color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+       .panel {
+            margin-left: 30px;
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+       .control-group {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        h3 { margin-top: 0; color: #333; font-size: 1.1em; }
+        label { display: block; margin-bottom: 5px; font-weight: 500; color: #555; }
+        input[type="range"] { width: 100%; cursor: pointer; }
+       .stats-box {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            flex-grow: 1;
+            overflow-y: auto;
+            font-size: 0.9em;
+        }
+       .layer-stat { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
+       .layer-stat:last-child { border-bottom: none; }
+       .layer-title { font-weight: bold; margin-bottom: 5px; display: flex; align-items: center; gap: 8px; }
+       .color-box { width: 12px; height: 12px; display: inline-block; border: 1px solid #333; }
+    </style>
+</head>
+<body>
+
+    <canvas id="canvas" width="700" height="700"></canvas>
+
+    <div class="panel">
+        <div class="control-group">
+            <h3>Parameters</h3>
+            <label for="sliderN">Mask Size (N): <span id="valN">20</span> (L4 Cells)</label>
+            <input type="range" id="sliderN" min="1" max="60" value="20">
+            
+            <label style="margin-top:10px" for="sliderD">Step Size (D): <span id="valD">5</span> (L4 Cells)</label>
+            <input type="range" id="sliderD" min="1" max="20" value="5">
+        </div>
+
+        <div class="control-group">
+            <h3>Animation Control</h3>
+            <label for="sliderProg">Progress</label>
+            <input type="range" id="sliderProg" min="0" max="100" value="0">
+        </div>
+
+        <div class="stats-box" id="stats">
+            <h3>Coverage Stats</h3>
+            <div id="statsContent"></div>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const sliderN = document.getElementById('sliderN');
+    const sliderD = document.getElementById('sliderD');
+    const sliderProg = document.getElementById('sliderProg');
+    const valN = document.getElementById('valN');
+    const valD = document.getElementById('valD');
+    const statsContent = document.getElementById('statsContent');
+
+    // 画布配置
+    const W = canvas.width;
+    const H = canvas.height;
+    const CENTER_X = W / 2;
+    const CENTER_Y = H / 2;
+
+    // 缩放系数：为了让视觉效果更明显，定义 L4 的一个 Cell 在屏幕上的像素大小
+    // 因为 121 个 Cell 很多，我们只画网格边界，不画每一个 Cell
+    const SCALE = 2.5; 
+
+    // 层定义
+    // L4 分辨率最粗 (dx=1), L1 最细 (dx=1/8)
+    // 颜色配置
+    const LAYERS = [
+        { id: 'L1', dx: 1/8, color: '#FF5252', name: 'L1 (Finest)' }, // Red
+        { id: 'L2', dx: 1/4, color: '#FF9800', name: 'L2' },          // Orange
+        { id: 'L3', dx: 1/2, color: '#4CAF50', name: 'L3' },          // Green
+        { id: 'L4', dx: 1,   color: '#2196F3', name: 'L4 (Coarsest)' } // Blue
+    ];
+
+    // 状态变量
+    let N = parseInt(sliderN.value);
+    let D = parseInt(sliderD.value);
+
+    // 辅助函数：映射逻辑坐标到画布坐标
+    function toCanvasX(physX) {
+        return CENTER_X + physX * SCALE;
+    }
+    function toCanvasY(physY) {
+        // Y轴翻转：数学上Y向上，画布Y向下
+        return CENTER_Y - physY * SCALE;
+    }
+
+    // 主绘制函数
+    function draw() {
+        // 清空画布
+        ctx.clearRect(0, 0, W, H);
+
+        // 1. 计算滑动参数
+        // 网格总尺寸 121 Cells。
+        // 物理空间的定义：
+        // 我们定义 L4 的 Cell (0,0) 的左下角在物理坐标 (0, 0)。
+        // 那么 L4 网格的物理范围是 [0, 121] x [0, 121]。
+        // 中心点在物理坐标 (60.5, 60.5)。
+        
+        const gridSize = 121;
+        const maxStart = gridSize - N;
+        
+        // 计算当前 Mask 在 L4 上的起始索引 (x0, y0)
+        // Progress 0 -> 1
+        const prog = sliderProg.value / 100;
+        
+        // 计算总步数
+        // 简单的光栅扫描顺序
+        const stepsOneWay = Math.ceil(maxStart / D) + 1;
+        const totalSteps = stepsOneWay * stepsOneWay;
+        
+        let currentStep = Math.floor(prog * (totalSteps - 1));
+        if (totalSteps === 0) currentStep = 0;
+
+        const stepX = Math.floor(currentStep / stepsOneWay);
+        const stepY = currentStep % stepsOneWay;
+
+        let x0 = stepX * D;
+        let y0 = stepY * D;
+        
+        // 限制边界，防止超出
+        x0 = Math.min(x0, maxStart);
+        y0 = Math.min(y0, maxStart);
+        if (maxStart < 0) { x0 = 0; y0 = 0; } // N > 121 的极端情况
+
+        // Mask 的物理坐标范围
+        // L4 Cell index i 对应物理 [i, i+1]
+        const maskPhysMinX = x0;
+        const maskPhysMaxX = x0 + N;
+        const maskPhysMinY = y0;
+        const maskPhysMaxY = y0 + N;
+
+        // 2. 绘制嵌套网格边界
+        // 所有层的物理中心都是 60.5。
+        // 每层有 121 个 Cell。
+        // 物理宽度 = 121 * dx。
+        
+        LAYERS.forEach(layer => {
+            const physW = gridSize * layer.dx;
+            // 层的物理边界：以 60.5 为中心
+            const minX = 60.5 - physW / 2;
+            const maxX = 60.5 + physW / 2;
+            const minY = 60.5 - physW / 2;
+            const maxY = 60.5 + physW / 2;
+
+            ctx.strokeStyle = layer.color;
+            ctx.lineWidth = layer.id === 'L4'? 3 : 2;
+            ctx.beginPath();
+            ctx.rect(toCanvasX(minX), toCanvasY(maxY), (maxX-minX)*SCALE, (maxY-minY)*SCALE);
+            ctx.stroke();
+
+            // 标签
+            ctx.fillStyle = layer.color;
+            ctx.font = 'bold 14px Arial';
+            ctx.fillText(layer.id, toCanvasX(minX) + 5, toCanvasY(maxY) - 5);
+        });
+
+        // 3. 绘制 Mask
+        ctx.fillStyle = 'rgba(103, 58, 183, 0.2)'; // Purple tint
+        ctx.strokeStyle = '#673AB7';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.rect(
+            toCanvasX(maskPhysMinX), 
+            toCanvasY(maskPhysMaxY), 
+            (maskPhysMaxX - maskPhysMinX) * SCALE, 
+            (maskPhysMaxY - maskPhysMinY) * SCALE
+        );
+        ctx.fill();
+        ctx.stroke();
+
+        // 4. 计算统计数据并更新 UI
+        updateStats(maskPhysMinX, maskPhysMaxX, maskPhysMinY, maskPhysMaxY);
+    }
+
+    function updateStats(pMinX, pMaxX, pMinY, pMaxY) {
+        let html = '';
+
+        // 从最细到最粗遍历
+        [...LAYERS].reverse().forEach(layer => {
+            // 计算该层哪些 Cell 与物理矩形 [pMinX, pMaxX] x [pMinY, pMaxY] 相交
+            
+            // 层的 Cell 索引 k 对应的物理范围是：
+            // Offset = 60.5 - (121/2)*dx
+            // PhysStart = Offset + k * dx
+            // PhysEnd = Offset + (k+1) * dx
+            
+            const offset = 60.5 - (121 / 2) * layer.dx;
+
+            // 求相交的 Cell 索引
+            // k_start: 第一个满足 (offset + (k+1)*dx) > pMinX 的 k
+            // => k+1 > (pMinX - offset) / dx
+            // => k >= floor( (pMinX - offset) / dx )
+            // 但是为了包含边界，我们用浮点运算仔细算
+            
+            // 计算包含在 Mask 内的 Cell 索引范围 [kStart, kEnd) 或 [kStart, kEnd]
+            // Cell 包含条件：Cell 的范围与 Mask 范围有重叠
+            
+            // 左边界：Cell 的右边界 > Mask 的左边界
+            // (offset + (k+1)*dx) > pMinX
+            // k > (pMinX - offset)/dx - 1
+            let kStart = Math.floor((pMinX - offset) / layer.dx - 1e-9) + 1;
+            
+            // 右边界：Cell 的左边界 < Mask 的右边界
+            // (offset + k*dx) < pMaxX
+            // k < (pMaxX - offset)/dx
+            let kEnd = Math.ceil((pMaxX - offset) / layer.dx + 1e-9) - 1;
+
+            // 同理 Y 方向
+            let lStart = Math.floor((pMinY - offset) / layer.dx - 1e-9) + 1;
+            let lEnd = Math.ceil((pMaxY - offset) / layer.dx + 1e-9) - 1;
+
+            // 限制在 0 到 120 之间
+            kStart = Math.max(0, kStart);
+            kEnd = Math.min(120, kEnd);
+            lStart = Math.max(0, lStart);
+            lEnd = Math.min(120, lEnd);
+
+            let count = 0;
+            let rangeStr = "No Coverage";
+            
+            if (kStart <= kEnd && lStart <= lEnd) {
+                count = (kEnd - kStart + 1) * (lEnd - lStart + 1);
+                rangeStr = `i: [${kStart}, ${kEnd}]<br>j: [${lStart}, ${lEnd}]`;
+            }
+
+            html += `
+                <div class="layer-stat">
+                    <div class="layer-title">
+                        <span class="color-box" style="background-color:${layer.color}"></span>
+                        ${layer.name}
+                    </div>
+                    <div><strong>Count:</strong> ${count}</div>
+                    <div style="font-family: monospace; font-size: 0.85em; color: #666;">
+                        ${rangeStr}
+                    </div>
+                </div>
+            `;
+        });
+
+        statsContent.innerHTML = html;
+    }
+
+    // 事件监听
+    function updateParams() {
+        N = parseInt(sliderN.value);
+        D = parseInt(sliderD.value);
+        valN.textContent = N;
+        valD.textContent = D;
+        draw();
+    }
+
+    sliderN.addEventListener('input', updateParams);
+    sliderD.addEventListener('input', updateParams);
+    sliderProg.addEventListener('input', draw);
+
+    // 初始化
+    updateParams();
+
+</script>
+</body>
+</html>

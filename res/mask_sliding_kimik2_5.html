@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>嵌套网格与物理遮罩滑动演示</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+        }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+            padding: 20px;
+            gap: 20px;
+        }
+        
+        /* 左侧画布区域 */
+        .canvas-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #64b5f6;
+            text-align: center;
+        }
+        
+        .canvas-wrapper {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        canvas {
+            max-width: 100%;
+            max-height: 100%;
+        }
+        
+        .canvas-info {
+            margin-top: 10px;
+            font-size: 13px;
+            color: #90a4ae;
+            text-align: center;
+        }
+        
+        /* 右侧面板 */
+        .panel-section {
+            width: 420px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .panel-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .panel-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #64b5f6;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .panel-title::before {
+            content: '';
+            width: 4px;
+            height: 18px;
+            background: #64b5f6;
+            border-radius: 2px;
+        }
+        
+        /* 滑块样式 */
+        .slider-group {
+            margin-bottom: 20px;
+        }
+        
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .slider-value {
+            background: rgba(100, 181, 246, 0.2);
+            color: #64b5f6;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 13px;
+            min-width: 50px;
+            text-align: center;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #64b5f6;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 15px rgba(100, 181, 246, 0.5);
+        }
+        
+        /* 控制按钮 */
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .btn {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #64b5f6 0%, #42a5f5 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #42a5f5 0%, #2196f3 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(100, 181, 246, 0.4);
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #e0e0e0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        /* 统计结果卡片 */
+        .result-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        
+        .result-item {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 15px;
+            border-left: 3px solid;
+        }
+        
+        .result-item.l4 { border-color: #ff7043; }
+        .result-item.l3 { border-color: #ffa726; }
+        .result-item.l2 { border-color: #66bb6a; }
+        .result-item.l1 { border-color: #42a5f5; }
+        
+        .result-label {
+            font-size: 12px;
+            color: #90a4ae;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .result-value {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        
+        .result-value.l4 { color: #ff7043; }
+        .result-value.l3 { color: #ffa726; }
+        .result-value.l2 { color: #66bb6a; }
+        .result-value.l1 { color: #42a5f5; }
+        
+        .result-range {
+            font-size: 11px;
+            color: #78909c;
+            font-family: 'Consolas', 'Monaco', monospace;
+            line-height: 1.5;
+        }
+        
+        /* 进度信息 */
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            margin-top: 15px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+        
+        .progress-info span {
+            color: #64b5f6;
+            font-weight: 600;
+        }
+        
+        /* 图例 */
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 10px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+        }
+        
+        .legend-color {
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+            border: 2px solid;
+        }
+        
+        .legend-color.l4 { background: rgba(255, 112, 67, 0.15); border-color: #ff7043; }
+        .legend-color.l3 { background: rgba(255, 167, 38, 0.15); border-color: #ffa726; }
+        .legend-color.l2 { background: rgba(102, 187, 106, 0.15); border-color: #66bb6a; }
+        .legend-color.l1 { background: rgba(66, 165, 245, 0.15); border-color: #42a5f5; }
+        .legend-color.mask { background: rgba(255, 255, 255, 0.2); border-color: #fff; border-style: dashed; }
+        
+        /* 说明文本 */
+        .description {
+            font-size: 13px;
+            color: #78909c;
+            line-height: 1.6;
+            padding: 15px;
+            background: rgba(100, 181, 246, 0.05);
+            border-radius: 10px;
+            border-left: 3px solid #64b5f6;
+        }
+        
+        .description p {
+            margin-bottom: 8px;
+        }
+        
+        .description p:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 左侧画布 -->
+        <div class="canvas-section">
+            <div class="section-title">📐 嵌套网格与物理遮罩可视化</div>
+            <div class="canvas-wrapper">
+                <canvas id="gridCanvas" width="700" height="700"></canvas>
+            </div>
+            <div class="canvas-info">
+                所有网格共享同一个中心点 | L4(红色) → L3(橙色) → L2(绿色) → L1(蓝色) | 分辨率逐层翻倍
+            </div>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color l4"></div>
+                    <span>L4 (dx)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color l3"></div>
+                    <span>L3 (dx/2)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color l2"></div>
+                    <span>L2 (dx/4)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color l1"></div>
+                    <span>L1 (dx/8)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color mask"></div>
+                    <span>Mask 窗口</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 右侧面板 -->
+        <div class="panel-section">
+            <!-- 参数控制 -->
+            <div class="panel-card">
+                <div class="panel-title">参数控制</div>
+                
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>Mask 窗口大小 N</span>
+                        <span class="slider-value" id="nValue">20</span>
+                    </div>
+                    <input type="range" id="nSlider" min="5" max="60" value="20" step="1">
+                    <div style="font-size: 11px; color: #78909c; margin-top: 4px;">
+                        在 L4 网格上的 Cell 数量
+                    </div>
+                </div>
+                
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>滑动步长 D</span>
+                        <span class="slider-value" id="dValue">10</span>
+                    </div>
+                    <input type="range" id="dSlider" min="1" max="20" value="10" step="1">
+                    <div style="font-size: 11px; color: #78909c; margin-top: 4px;">
+                        每次滑动的 L4 Cell 数量
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 滑动控制 -->
+            <div class="panel-card">
+                <div class="panel-title">滑动控制</div>
+                
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>滑动进度</span>
+                        <span class="slider-value" id="progressValue">0%</span>
+                    </div>
+                    <input type="range" id="progressSlider" min="0" max="100" value="0" step="1">
+                </div>
+                
+                <div class="controls">
+                    <button class="btn btn-secondary" id="resetBtn">⏮ 重置</button>
+                    <button class="btn btn-primary" id="playBtn">▶ 播放</button>
+                </div>
+                
+                <div class="progress-info">
+                    <div>位置: <span id="positionInfo">(0, 0)</span></div>
+                    <div>步数: <span id="stepInfo">0 / 36</span></div>
+                </div>
+            </div>
+            
+            <!-- 实时统计 -->
+            <div class="panel-card">
+                <div class="panel-title">各层被遮盖 Cell 统计</div>
+                
+                <div class="result-grid">
+                    <div class="result-item l4">
+                        <div class="result-label">L4 层 (dx)</div>
+                        <div class="result-value l4" id="countL4">-</div>
+                        <div class="result-range" id="rangeL4">-</div>
+                    </div>
+                    <div class="result-item l3">
+                        <div class="result-label">L3 层 (dx/2)</div>
+                        <div class="result-value l3" id="countL3">-</div>
+                        <div class="result-range" id="rangeL3">-</div>
+                    </div>
+                    <div class="result-item l2">
+                        <div class="result-label">L2 层 (dx/4)</div>
+                        <div class="result-value l2" id="countL2">-</div>
+                        <div class="result-range" id="rangeL2">-</div>
+                    </div>
+                    <div class="result-item l1">
+                        <div class="result-label">L1 层 (dx/8)</div>
+                        <div class="result-value l1" id="countL1">-</div>
+                        <div class="result-range" id="rangeL1">-</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 说明 -->
+            <div class="description">
+                <p><strong>物理关系：</strong>L1-L4 共享同一中心点，每层分辨率翻倍。</p>
+                <p><strong>换算原理：</strong>L(k-1) 的一个 Cell 在物理上等于 L(k) 的 2×2 个 Cell。</p>
+                <p><strong>计算公式：</strong>若 Mask 在 L4 覆盖 N×N 个 Cell，则在 Lk 层覆盖 (N×2^(4-k)) 个 Cell。</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 配置常量
+        const GRID_SIZE = 121;  // 每层的 Cell 数量
+        const CANVAS_SIZE = 700;
+        const PADDING = 60;
+        
+        // 层级配置（从外到内：L4 → L1）
+        const LAYERS = [
+            { id: 'L4', name: 'L4', level: 4, color: '#ff7043', scale: 1 },      // 最粗
+            { id: 'L3', name: 'L3', level: 3, color: '#ffa726', scale: 0.5 },    // 分辨率翻倍
+            { id: 'L2', name: 'L2', level: 2, color: '#66bb6a', scale: 0.25 },   // 分辨率×4
+            { id: 'L1', name: 'L1', level: 1, color: '#42a5f5', scale: 0.125 }  // 分辨率×8
+        ];
+        
+        // 状态
+        let state = {
+            N: 20,           // Mask 窗口大小（L4 Cell 数量）
+            D: 10,           // 滑动步长
+            progress: 0,     // 滑动进度 (0-100)
+            isPlaying: false,
+            animationId: null
+        };
+        
+        // DOM 元素
+        const canvas = document.getElementById('gridCanvas');
+        const ctx = canvas.getContext('2d');
+        const nSlider = document.getElementById('nSlider');
+        const dSlider = document.getElementById('dSlider');
+        const progressSlider = document.getElementById('progressSlider');
+        const nValue = document.getElementById('nValue');
+        const dValue = document.getElementById('dValue');
+        const progressValue = document.getElementById('progressValue');
+        const playBtn = document.getElementById('playBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const positionInfo = document.getElementById('positionInfo');
+        const stepInfo = document.getElementById('stepInfo');
+        
+        // 计算最大滑动范围
+        function calculateSlideRange() {
+            // 在 L4 上，Mask 可以从 (0,0) 滑动到 (121-N, 121-N)
+            const maxOffset = GRID_SIZE - state.N;
+            const stepsX = Math.floor(maxOffset / state.D) + 1;
+            const stepsY = Math.floor(maxOffset / state.D) + 1;
+            return { maxOffset, stepsX, stepsY, totalSteps: stepsX * stepsY };
+        }
+        
+        // 根据进度计算当前 Mask 位置（L4 坐标）
+        function getMaskPosition() {
+            const { maxOffset, stepsX } = calculateSlideRange();
+            const totalSteps = stepsX * stepsX;
+            const currentStep = Math.round((state.progress / 100) * (totalSteps - 1));
+            
+            const stepY = Math.floor(currentStep / stepsX);
+            const stepX = currentStep % stepsX;
+            
+            const col = stepX * state.D;
+            const row = stepY * state.D;
+            
+            return { row, col, currentStep, totalSteps };
+        }
+        
+        // 计算 L4 Cell 尺寸（像素）
+        function getL4CellSize() {
+            const drawSize = CANVAS_SIZE - 2 * PADDING;
+            return drawSize / GRID_SIZE;
+        }
+        
+        // 计算各层在物理空间中的实际边界（以 L4 Cell 为单位）
+        function getLayerBounds() {
+            // L4: 121×121 L4 Cells
+            // L3: 121×121 L3 Cells = 121×121 × 0.5 L4 Cells = 60.5 × 60.5 L4 Cells
+            // 所以 L3 的物理尺寸是 L4 的一半
+            
+            const l4Size = GRID_SIZE;  // 121
+            const center = l4Size / 2;  // 60.5
+            
+            return LAYERS.map(layer => {
+                // 每层在 L4 坐标系中的物理尺寸
+                const sizeInL4 = GRID_SIZE * layer.scale;  // 121, 60.5, 30.25, 15.125
+                const halfSize = sizeInL4 / 2;
+                
+                return {
+                    ...layer,
+                    bounds: {
+                        min: center - halfSize,
+                        max: center + halfSize,
+                        size: sizeInL4
+                    }
+                };
+            });
+        }
+        
+        // 计算 Mask 与各层的相交区域
+        function calculateIntersection(layerBounds, maskPos) {
+            const maskMin = maskPos.col;  // L4 坐标
+            const maskMax = maskPos.col + state.N;
+            const maskRowMin = maskPos.row;
+            const maskRowMax = maskPos.row + state.N;
+            
+            // 检查 Mask 是否与该层相交
+            const intersectCol = !(maskMax <= layerBounds.bounds.min || maskMin >= layerBounds.bounds.max);
+            const intersectRow = !(maskRowMax <= layerBounds.bounds.min || maskRowMin >= layerBounds.bounds.max);
+            
+            if (!intersectCol || !intersectRow) {
+                return { count: 0, ranges: '-' };
+            }
+            
+            // 计算相交区域（在 L4 坐标系中）
+            const intersectMin = Math.max(maskMin, layerBounds.bounds.min);
+            const intersectMax = Math.min(maskMax, layerBounds.bounds.max);
+            const intersectRowMin = Math.max(maskRowMin, layerBounds.bounds.min);
+            const intersectRowMax = Math.min(maskRowMax, layerBounds.bounds.max);
+            
+            // 换算为该层的 Cell 索引
+            // 该层的 Cell 尺寸（在 L4 坐标系中）等于 scale
+            const cellSizeInL4 = layerBounds.scale;
+            
+            // 起始 Cell 索引（相对于该层）
+            const startCol = Math.floor((intersectMin - layerBounds.bounds.min) / cellSizeInL4);
+            const endCol = Math.ceil((intersectMax - layerBounds.bounds.min) / cellSizeInL4) - 1;
+            const startRow = Math.floor((intersectRowMin - layerBounds.bounds.min) / cellSizeInL4);
+            const endRow = Math.ceil((intersectRowMax - layerBounds.bounds.min) / cellSizeInL4) - 1;
+            
+            // 确保索引在有效范围内
+            const clampedStartCol = Math.max(0, startCol);
+            const clampedEndCol = Math.min(GRID_SIZE - 1, endCol);
+            const clampedStartRow = Math.max(0, startRow);
+            const clampedEndRow = Math.min(GRID_SIZE - 1, endRow);
+            
+            const colCount = clampedEndCol - clampedStartCol + 1;
+            const rowCount = clampedEndRow - clampedStartRow + 1;
+            const totalCount = colCount * rowCount;
+            
+            const ranges = `X[${clampedStartCol}-${clampedEndCol}], Y[${clampedStartRow}-${clampedEndRow}]`;
+            
+            return { count: totalCount, ranges, 
+                     colRange: [clampedStartCol, clampedEndCol],
+                     rowRange: [clampedStartRow, clampedEndRow] };
+        }
+        
+        // 绘制网格
+        function drawGrid() {
+            ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+            
+            const cellSize = getL4CellSize();
+            const layerBounds = getLayerBounds();
+            const maskPos = getMaskPosition();
+            
+            // 绘制背景
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+            
+            // 绘制网格区域背景
+            const gridPixelSize = cellSize * GRID_SIZE;
+            const gridOffset = (CANVAS_SIZE - gridPixelSize) / 2;
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+            ctx.fillRect(gridOffset, gridOffset, gridPixelSize, gridPixelSize);
+            
+            // 绘制 L4 网格线（最粗的网格）
+            ctx.strokeStyle = 'rgba(255, 112, 67, 0.15)';
+            ctx.lineWidth = 1;
+            
+            for (let i = 0; i <= GRID_SIZE; i += 10) {
+                const pos = gridOffset + i * cellSize;
+                ctx.beginPath();
+                ctx.moveTo(pos, gridOffset);
+                ctx.lineTo(pos, gridOffset + gridPixelSize);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(gridOffset, pos);
+                ctx.lineTo(gridOffset + gridPixelSize, pos);
+                ctx.stroke();
+            }
+            
+            // 绘制各层边界
+            layerBounds.forEach((layer, index) => {
+                const bounds = layer.bounds;
+                const x = gridOffset + bounds.min * cellSize;
+                const y = gridOffset + bounds.min * cellSize;
+                const w = bounds.size * cellSize;
+                const h = bounds.size * cellSize;
+                
+                // 填充区域
+                ctx.fillStyle = `${layer.color}15`;  // 15 = ~10% opacity in hex
+                ctx.fillRect(x, y, w, h);
+                
+                // 边界线
+                ctx.strokeStyle = layer.color;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(x, y, w, h);
+                
+                // 标签
+                ctx.fillStyle = layer.color;
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                ctx.fillText(layer.name, x + 5, y + 5);
+                
+                // 分辨率信息
+                ctx.font = '11px sans-serif';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.fillText(`dx/${Math.pow(2, 4 - layer.level)}`, x + 5, y + 22);
+            });
+            
+            // 绘制 Mask 窗口
+            const maskX = gridOffset + maskPos.col * cellSize;
+            const maskY = gridOffset + maskPos.row * cellSize;
+            const maskW = state.N * cellSize;
+            const maskH = state.N * cellSize;
+            
+            // Mask 背景
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.fillRect(maskX, maskY, maskW, maskH);
+            
+            // Mask 边框
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([8, 4]);
+            ctx.strokeRect(maskX, maskY, maskW, maskH);
+            ctx.setLineDash([]);
+            
+            // Mask 标签
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 13px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`Mask ${state.N}×${state.N}`, maskX + maskW / 2, maskY - 12);
+            
+            // 绘制中心点
+            const centerPixel = CANVAS_SIZE / 2;
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(centerPixel, centerPixel, 5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 中心点标签
+            ctx.font = '11px sans-serif';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.textAlign = 'left';
+            ctx.fillText('Center', centerPixel + 10, centerPixel - 5);
+        }
+        
+        // 更新统计信息
+        function updateStats() {
+            const layerBounds = getLayerBounds();
+            const maskPos = getMaskPosition();
+            const { totalSteps } = calculateSlideRange();
+            
+            // 更新位置信息
+            positionInfo.textContent = `(${maskPos.row}, ${maskPos.col})`;
+            stepInfo.textContent = `${maskPos.currentStep + 1} / ${totalSteps}`;
+            
+            // 计算并显示各层统计
+            const layers = ['L4', 'L3', 'L2', 'L1'];
+            layers.forEach((layerName, index) => {
+                const layer = layerBounds.find(l => l.name === layerName);
+                const result = calculateIntersection(layer, maskPos);
+                
+                document.getElementById(`count${layerName}`).textContent = result.count;
+                document.getElementById(`range${layerName}`).textContent = result.ranges;
+            });
+        }
+        
+        // 主渲染函数
+        function render() {
+            drawGrid();
+            updateStats();
+        }
+        
+        // 播放动画
+        function playAnimation() {
+            if (state.isPlaying) {
+                state.isPlaying = false;
+                playBtn.textContent = '▶ 播放';
+                cancelAnimationFrame(state.animationId);
+            } else {
+                state.isPlaying = true;
+                playBtn.textContent = '⏸ 暂停';
+                animate();
+            }
+        }
+        
+        function animate() {
+            if (!state.isPlaying) return;
+            
+            state.progress += 0.5;
+            if (state.progress >= 100) {
+                state.progress = 0;
+            }
+            
+            progressSlider.value = state.progress;
+            progressValue.textContent = Math.round(state.progress) + '%';
+            
+            render();
+            
+            state.animationId = requestAnimationFrame(animate);
+        }
+        
+        // 重置
+        function reset() {
+            state.isPlaying = false;
+            state.progress = 0;
+            playBtn.textContent = '▶ 播放';
+            cancelAnimationFrame(state.animationId);
+            progressSlider.value = 0;
+            progressValue.textContent = '0%';
+            render();
+        }
+        
+        // 事件监听
+        nSlider.addEventListener('input', (e) => {
+            state.N = parseInt(e.target.value);
+            nValue.textContent = state.N;
+            render();
+        });
+        
+        dSlider.addEventListener('input', (e) => {
+            state.D = parseInt(e.target.value);
+            dValue.textContent = state.D;
+            render();
+        });
+        
+        progressSlider.addEventListener('input', (e) => {
+            state.progress = parseFloat(e.target.value);
+            progressValue.textContent = Math.round(state.progress) + '%';
+            render();
+        });
+        
+        playBtn.addEventListener('click', playAnimation);
+        resetBtn.addEventListener('click', reset);
+        
+        // 初始渲染
+        render();
+</script>
+</body>
+</html>

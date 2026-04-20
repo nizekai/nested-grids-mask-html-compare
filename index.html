@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 结果对比</title>
+  <style>
+    :root {
+      --bg: #eef3ff;
+      --panel: rgba(255, 255, 255, 0.9);
+      --panel-strong: #ffffff;
+      --border: rgba(42, 59, 92, 0.14);
+      --text: #14213d;
+      --muted: #667085;
+      --accent: #2563eb;
+      --accent-2: #0f766e;
+      --shadow: 0 20px 48px rgba(19, 33, 68, 0.14);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), transparent 34%),
+        radial-gradient(circle at bottom right, rgba(15, 118, 110, 0.14), transparent 28%),
+        linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+    }
+
+    body {
+      padding: 28px;
+    }
+
+    .page {
+      max-width: 1480px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(340px, 0.95fr) minmax(420px, 1.05fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .prompt-panel {
+      position: sticky;
+      top: 24px;
+      padding: 28px;
+      overflow: hidden;
+    }
+
+    .prompt-panel::after {
+      content: "";
+      position: absolute;
+      inset: auto -120px -140px auto;
+      width: 260px;
+      height: 260px;
+      background: radial-gradient(circle, rgba(37, 99, 235, 0.12), transparent 70%);
+      pointer-events: none;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(32px, 4vw, 48px);
+      line-height: 1.06;
+      letter-spacing: -0.03em;
+    }
+
+    .intro {
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.75;
+    }
+
+    .helper-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .status {
+      color: var(--accent-2);
+      font-weight: 600;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 62vh;
+      resize: vertical;
+      border: 1px solid rgba(42, 59, 92, 0.12);
+      border-radius: 12px;
+      padding: 18px 18px 22px;
+      background: rgba(247, 249, 252, 0.95);
+      color: var(--text);
+      font: 500 13px/1.7 "SFMono-Regular", "JetBrains Mono", "Menlo", "Consolas", monospace;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    textarea[readonly] {
+      background: rgba(242, 245, 250, 0.96);
+      color: #344054;
+      cursor: default;
+    }
+
+    textarea:focus {
+      border-color: rgba(37, 99, 235, 0.55);
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+      transform: translateY(-1px);
+    }
+
+    textarea[readonly]:focus {
+      transform: none;
+    }
+
+    .prompt-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    .primary-btn {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 10px 20px rgba(37, 99, 235, 0.22);
+    }
+
+    .secondary-btn {
+      background: rgba(20, 33, 61, 0.08);
+      color: var(--text);
+    }
+
+    .models-panel {
+      padding: 28px;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.1;
+    }
+
+    .panel-head p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .model-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .model-card {
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      padding: 18px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 255, 0.92));
+      box-shadow: 0 10px 22px rgba(31, 41, 55, 0.06);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+
+    .model-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 16px 30px rgba(31, 41, 55, 0.1);
+      border-color: rgba(37, 99, 235, 0.2);
+    }
+
+    .model-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 5px;
+      border-radius: 14px 14px 0 0;
+      background: linear-gradient(90deg, rgba(37, 99, 235, 0.82), rgba(15, 118, 110, 0.74));
+    }
+
+    .model-card h3 {
+      margin: 10px 0 8px;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    .card-topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 10px 0 8px;
+      flex-wrap: wrap;
+    }
+
+    .model-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(37, 99, 235, 0.08);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .logic-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+    }
+
+    .logic-badge.correct {
+      background: rgba(22, 163, 74, 0.12);
+      color: #15803d;
+    }
+
+    .logic-badge.mixed {
+      background: rgba(217, 119, 6, 0.12);
+      color: #b45309;
+    }
+
+    .logic-badge.wrong {
+      background: rgba(220, 38, 38, 0.12);
+      color: #b91c1c;
+    }
+
+    .review-text {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .file-path {
+      display: block;
+      margin-bottom: 14px;
+      color: #8b93a7;
+      font-size: 12px;
+      font-family: "SFMono-Regular", "JetBrains Mono", monospace;
+      word-break: break-all;
+    }
+
+    .card-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .card-link {
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      padding: 11px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      transition: transform 0.16s ease, opacity 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .card-link:hover {
+      transform: translateY(-1px);
+    }
+
+    .card-link.primary {
+      background: var(--text);
+      color: #fff;
+      box-shadow: 0 10px 18px rgba(20, 33, 61, 0.18);
+    }
+
+    .card-link.secondary {
+      background: rgba(20, 33, 61, 0.06);
+      color: var(--text);
+    }
+
+    .empty-tip {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: rgba(180, 83, 9, 0.1);
+      color: #92400e;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1080px) {
+      body {
+        padding: 18px;
+      }
+
+      .page {
+        grid-template-columns: 1fr;
+      }
+
+      .prompt-panel {
+        position: static;
+      }
+
+      textarea {
+        min-height: 42vh;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .prompt-panel,
+      .models-panel {
+        padding: 20px;
+      }
+
+      .panel-head {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .model-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .prompt-actions,
+      .card-actions {
+        width: 100%;
+      }
+
+      .prompt-actions > *,
+      .card-actions > * {
+        flex: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="panel prompt-panel">
+      <h1>嵌套网格html交互任务 - ai测试</h1>
+      <p class="intro">
+        均开启thinking，仅一次对话，禁止引用外部信息。工具：除gpt用codex，其他用opencode。
+      </p>
+      <div class="helper-row">
+        <span>实例 Prompt</span>
+      </div>
+      <textarea
+        id="promptInput"
+        readonly
+      ></textarea>
+      <div class="prompt-actions">
+        <button class="primary-btn" id="copyPromptBtn" type="button">复制 Prompt</button>
+      </div>
+    </section>
+
+    <section class="panel models-panel">
+      <div class="panel-head">
+        <div>
+          <h2>模型结果页</h2>
+          <p>点击卡片即可跳到 `res/` 下面的具体结果页面，方便逐个核对输出差异。</p>
+        </div>
+      </div>
+      <div class="model-grid" id="modelGrid"></div>
+      <div class="empty-tip">
+        声明：本页仅用于个人测试与结果整理，不代表任何模型的真实上限、稳定表现或综合能力结论。
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const pages = [
+      {
+        name: "Doubao",
+        file: "res/mask_sliding_doubao.html",
+        review: "版面最朴素，能把参数和统计拆开，但可视层比较简陋，演示感一般。边界换算有 off-by-one，覆盖范围会偏一格。",
+        logicLabel: "逻辑微瑕",
+        logicClass: "mixed"
+      },
+      {
+        name: "Gemini 3 Flash Preview",
+        file: "res/mask_sliding_gemini-3-flash-preview.html",
+        review: "看着没什么大问题。但是边界索引换算有 off-by-one，实际统计会偏一格。",
+        logicLabel: "逻辑微瑕",
+        logicClass: "mixed"
+      },
+      {
+        name: "Gemini 3.1 Pro Preview",
+        file: "res/mask_sliding_gemini_3_1_pro_preview.html",
+        review: "UI很简洁，出了layout会跳，没什么大问题。主要是边界索引有 off-by-one 微偏差。",
+        logicLabel: "逻辑微瑕",
+        logicClass: "mixed"
+      },
+      {
+        name: "GLM 5.1",
+        file: "res/mask_sliding_glm5.1.html",
+        review: "综合质量很高，甚至有MASK 区域放大视图。老师傅想得最久，13分钟，但也挺稳的。(虽然一度想抄别人作业）",
+        logicLabel: "逻辑可靠",
+        logicClass: "correct"
+      },
+      {
+        name: "GPT-5.4 High",
+        file: "res/mask_sliding_gpt5.4high.html",
+        review: "错倒是没错，但是竖向排列观感不好。UI一般",
+        logicLabel: "逻辑可靠",
+        logicClass: "correct"
+      },
+      {
+        name: "GPT-5.4 XHigh",
+        file: "res/mask_sliding_gpt5.4xhigh.html",
+        review: "比5.4high强，但是还是竖向排列。。UI提升了",
+        logicLabel: "逻辑可靠",
+        logicClass: "correct"
+      },
+      {
+        name: "Kimi K2.5",
+        file: "res/mask_sliding_kimik2_5.html",
+        review: "UI视觉很不错，逻辑也没出错，速度也很快。",
+        logicLabel: "逻辑可靠",
+        logicClass: "correct"
+      },
+      {
+        name: "Mimo v2 Pro",
+        file: "res/mask_sliding_mimo_v2_pro.html",
+        review: "UI还可以，理工男风格。边界定义偏半格，最后体现成覆盖统计上的 off-by-one。",
+        logicLabel: "逻辑微瑕",
+        logicClass: "mixed"
+      },
+      {
+        name: "MiniMax M2.7",
+        file: "res/mask_sliding_minimax_m2_7.html",
+        review: "不行。",
+        logicLabel: "拉完了",
+        logicClass: "wrong"
+      },
+      {
+        name: "Qwen3 6 Plus",
+        file: "res/mask_sliding_qwen3_6_plus.html",
+        review: "非常不错的，作为演示来讲没毛病",
+        logicLabel: "逻辑可靠",
+        logicClass: "correct"
+      }
+    ];
+
+    const promptInput = document.getElementById("promptInput");
+    const modelGrid = document.getElementById("modelGrid");
+    const copyPromptBtn = document.getElementById("copyPromptBtn");
+    const promptText = `请用 HTML/JS 编写一个交互式动画，演示地理“嵌套网格(Nested Grids)”与“物理遮罩(Mask)”的滑动对应关系。
+
+【客观设定】：
+1. 有 4 层嵌套网格 (L1, L2, L3, L4)，它们在真实物理空间中共享同一个中心点。
+2. 每一层的数据维度都是固定的 121 x 121 个 Cell。
+3. L4 的物理范围最大（分辨率最粗）。从 L4 向内到 L1，每进一层，物理分辨率精确翻倍（即网格的物理间距 dx/dy 减半）。
+4. 现在定义“真实物理 Mask 窗口”。这个窗口的尺寸为 L4 网格上的 N x N 个 Cell。
+5. 该 Mask 作用在 L4 上，以步长 D 个 Cell 为单位，从左上角逐行滑动到右下角。
+
+【UI 与交互要求】：
+1. 左侧画布：按正确的物理比例，自顶向下画出 L1~L4 的网格边界，并画出正在滑动的 Mask 窗口。
+2. 右侧面板：提供 N 和 D 的参数滑块，以及控制 Mask 滑动的进度条。
+3. 进阶要求：请在右侧面板实时计算并输出：当 Mask 在 L4 上滑动时，各层（L1、L2、L3、L4）分别有多少个 Cell 在物理上被这个窗口真实遮盖了？请给出具体的 Cell 索引范围和数量。
+
+【保存和命名要求】：
+请将代码保存在res/ 目录下，文件命名格式为 mask_sliding_{ai_model_name}.html
+其中ai_model_name 是你的ai模型的英文名。
+
+**不允许借助任何外部参考**`;
+
+    promptInput.value = promptText;
+
+    copyPromptBtn.addEventListener("click", async () => {
+      const originalLabel = copyPromptBtn.textContent;
+      try {
+        await navigator.clipboard.writeText(promptInput.value);
+        copyPromptBtn.textContent = "已复制";
+      } catch (error) {
+        copyPromptBtn.textContent = "复制失败";
+      }
+      window.setTimeout(() => {
+        copyPromptBtn.textContent = originalLabel;
+      }, 1200);
+    });
+
+    function renderCards() {
+      modelGrid.innerHTML = pages.map((page) => `
+        <article class="model-card">
+          <div class="card-topline">
+            <span class="model-meta">Result Page</span>
+            <span class="logic-badge ${page.logicClass}">${page.logicLabel}</span>
+          </div>
+          <h3>${page.name}</h3>
+          <p class="review-text">${page.review}</p>
+          <span class="file-path">${page.file}</span>
+          <div class="card-actions">
+            <a class="card-link primary" href="${page.file}">打开页面</a>
+            <a class="card-link secondary" href="${page.file}" target="_blank" rel="noreferrer">新标签打开</a>
+          </div>
+        </article>
+      `).join("");
+    }
+
+    renderCards();
+  </script>
+</body>
+</html>

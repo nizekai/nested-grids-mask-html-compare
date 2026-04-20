@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地理嵌套网格与物理遮罩滑动演示</title>
+    <style>
+        :root {
+            --bg-color: #f5f5f7;
+            --panel-bg: #ffffff;
+            --primary-color: #007aff;
+            --border-color: #d2d2d7;
+            --text-color: #1d1d1f;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #canvas-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background-color: #e5e5ea;
+            position: relative;
+        }
+
+        canvas {
+            background-color: white;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        #panel {
+            width: 400px;
+            background-color: var(--panel-bg);
+            border-left: 1px solid var(--border-color);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.05);
+        }
+
+        h2 { margin-top: 0; font-size: 1.2rem; }
+        .control-group { margin-bottom: 20px; }
+        .control-group label { display: block; margin-bottom: 8px; font-weight: 500; font-size: 0.9rem; }
+        .control-group input[type="range"] { width: 100%; }
+        .value-display { float: right; color: var(--primary-color); font-weight: bold; }
+
+        .stats-card {
+            background: #f9f9f9;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 12px;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+
+        .stats-card h3 { margin: 0 0 8px 0; font-size: 0.9rem; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+        .stats-line { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .l1 { border-left: 4px solid #ff3b30; }
+        .l2 { border-left: 4px solid #ff9500; }
+        .l3 { border-left: 4px solid #4cd964; }
+        .l4 { border-left: 4px solid #007aff; }
+
+        .legend {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            background: rgba(255,255,255,0.8);
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+        .legend-item { display: flex; align-items: center; margin-bottom: 4px; }
+        .color-box { width: 12px; height: 12px; margin-right: 8px; border: 1px solid #666; }
+    </style>
+</head>
+<body>
+
+<div id="canvas-container">
+    <canvas id="mainCanvas"></canvas>
+    <div class="legend">
+        <div class="legend-item"><div class="color-box" style="background: #007aff;"></div> L4 (121x121, 1x Res)</div>
+        <div class="legend-item"><div class="color-box" style="background: #4cd964;"></div> L3 (121x121, 2x Res)</div>
+        <div class="legend-item"><div class="color-box" style="background: #ff9500;"></div> L2 (121x121, 4x Res)</div>
+        <div class="legend-item"><div class="color-box" style="background: #ff3b30;"></div> L1 (121x121, 8x Res)</div>
+        <div class="legend-item"><div class="color-box" style="border: 2px solid black; background: rgba(0,0,0,0.1);"></div> Mask Window</div>
+    </div>
+</div>
+
+<div id="panel">
+    <h2>参数控制</h2>
+    
+    <div class="control-group">
+        <label>Mask 尺寸 N (L4 Cells): <span id="n-val" class="value-display">32</span></label>
+        <input type="range" id="n-slider" min="5" max="60" value="32">
+    </div>
+
+    <div class="control-group">
+        <label>滑动步长 D (L4 Cells): <span id="d-val" class="value-display">4</span></label>
+        <input type="range" id="d-slider" min="1" max="20" value="4">
+    </div>
+
+    <div class="control-group">
+        <label>滑动进度: <span id="progress-val" class="value-display">0%</span></label>
+        <input type="range" id="progress-slider" min="0" max="100" value="0">
+    </div>
+
+    <h2>实时物理遮盖分析</h2>
+    <div id="stats-container">
+        <!-- 动态生成 -->
+    </div>
+</div>
+
+<script>
+    /**
+     * 核心逻辑说明：
+     * 1. L4 是基准，dx = 1.0 (单位物理长度)
+     * 2. L3 dx = 0.5, L2 dx = 0.25, L1 dx = 0.125
+     * 3. 所有网格 121x121，中心点重合。
+     * 4. L4 物理范围: [-60, 60] (总长 120 dx)
+     * 5. L3 物理范围: [-30, 30]
+     * 6. L2 物理范围: [-15, 15]
+     * 7. L1 物理范围: [-7.5, 7.5]
+     */
+
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d');
+    const DIM = 121;
+    const CENTER_IDX = 60; // (121-1)/2
+
+    // UI Elements
+    const nSlider = document.getElementById('n-slider');
+    const dSlider = document.getElementById('d-slider');
+    const pSlider = document.getElementById('progress-slider');
+    const statsContainer = document.getElementById('stats-container');
+
+    let state = {
+        N: parseInt(nSlider.value),
+        D: parseInt(dSlider.value),
+        progress: 0,
+        currentStep: 0,
+        totalSteps: 0
+    };
+
+    function updateParams() {
+        state.N = parseInt(nSlider.value);
+        state.D = parseInt(dSlider.value);
+        
+        // 计算在 L4 上可以滑动的总步数
+        // 滑动范围是 0 到 (121 - N)
+        const maxOffset = DIM - state.N;
+        const stepsX = Math.floor(maxOffset / state.D) + 1;
+        state.totalSteps = stepsX * stepsX;
+        
+        document.getElementById('n-val').textContent = state.N;
+        document.getElementById('d-val').textContent = state.D;
+        
+        draw();
+    }
+
+    nSlider.oninput = updateParams;
+    dSlider.oninput = updateParams;
+    pSlider.oninput = () => {
+        state.progress = parseInt(pSlider.value);
+        document.getElementById('progress-val').textContent = state.progress + '%';
+        draw();
+    };
+
+    function resize() {
+        const size = Math.min(window.innerWidth - 450, window.innerHeight - 100);
+        canvas.width = size;
+        canvas.height = size;
+        draw();
+    }
+
+    window.onresize = resize;
+
+    function getMaskPhysicalRect() {
+        const maxOffset = DIM - state.N;
+        const stepsPerRow = Math.floor(maxOffset / state.D) + 1;
+        
+        // 根据进度百分比计算当前步数
+        const stepIdx = Math.floor((state.progress / 100) * (state.totalSteps - 1));
+        const ix = (stepIdx % stepsPerRow) * state.D;
+        const iy = Math.floor(stepIdx / stepsPerRow) * state.D;
+
+        // L4 的 Cell 0 的物理坐标是 -60
+        // Mask 在 L4 的索引范围是 [ix, ix + N]
+        const xMin = -60 + ix;
+        const xMax = -60 + ix + state.N;
+        const yMin = -60 + iy;
+        const yMax = -60 + iy + state.N;
+
+        return { xMin, xMax, yMin, yMax, ix, iy };
+    }
+
+    function calculateIntersection(level, maskRect) {
+        // level 1: L1, ..., 4: L4
+        const ratio = Math.pow(2, 4 - level); // L4:1, L3:2, L2:4, L1:8
+        const dx = 1.0 / ratio;
+        const halfDim = (DIM - 1) / 2;
+        const levelPhysicalMin = -halfDim * dx;
+        const levelPhysicalMax = halfDim * dx;
+
+        // 相交物理范围
+        const interXMin = Math.max(maskRect.xMin, levelPhysicalMin);
+        const interXMax = Math.min(maskRect.xMax, levelPhysicalMax);
+        const interYMin = Math.max(maskRect.yMin, levelPhysicalMin);
+        const interYMax = Math.min(maskRect.yMax, levelPhysicalMax);
+
+        if (interXMin >= interXMax || interYMin >= interYMax) {
+            return null;
+        }
+
+        // 转换为该层的 Cell 索引
+        // index = (phys - levelPhysicalMin) / dx
+        const iStart = Math.round((interXMin - levelPhysicalMin) / dx);
+        const iEnd = Math.round((interXMax - levelPhysicalMin) / dx) - 1;
+        const jStart = Math.round((interYMin - levelPhysicalMin) / dx);
+        const jEnd = Math.round((interYMax - levelPhysicalMin) / dx) - 1;
+
+        return {
+            iRange: [iStart, iEnd],
+            jRange: [jStart, jEnd],
+            count: (iEnd - iStart + 1) * (jEnd - jStart + 1)
+        };
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        const padding = 40;
+        const drawSize = canvas.width - padding * 2;
+        const scale = drawSize / 120; // 基准 L4 物理长度 120
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+
+        const colors = {
+            4: '#007aff',
+            3: '#4cd964',
+            2: '#ff9500',
+            1: '#ff3b30'
+        };
+
+        // 1. 画各层网格边界
+        for (let l = 4; l >= 1; l--) {
+            const ratio = Math.pow(2, 4 - l);
+            const physHalf = 60 / ratio;
+            const screenHalf = physHalf * scale;
+
+            ctx.strokeStyle = colors[l];
+            ctx.lineWidth = 2;
+            ctx.strokeRect(centerX - screenHalf, centerY - screenHalf, screenHalf * 2, screenHalf * 2);
+            
+            // 弱化背景网格 (仅 L4)
+            if (l === 4) {
+                ctx.beginPath();
+                ctx.strokeStyle = '#eee';
+                ctx.lineWidth = 0.5;
+                for(let i=0; i<=120; i+=10) {
+                    let pos = centerX - screenHalf + (i * scale);
+                    ctx.moveTo(pos, centerY - screenHalf);
+                    ctx.lineTo(pos, centerY + screenHalf);
+                    ctx.moveTo(centerX - screenHalf, pos);
+                    ctx.lineTo(centerX + screenHalf, pos);
+                }
+                ctx.stroke();
+            }
+        }
+
+        // 2. 计算并画 Mask
+        const maskRect = getMaskPhysicalRect();
+        const maskScreenX = centerX + maskRect.xMin * scale;
+        const maskScreenY = centerY + maskRect.yMin * scale;
+        const maskScreenWidth = (maskRect.xMax - maskRect.xMin) * scale;
+        const maskScreenHeight = (maskRect.yMax - maskRect.yMin) * scale;
+
+        ctx.fillStyle = 'rgba(0,0,0,0.1)';
+        ctx.fillRect(maskScreenX, maskScreenY, maskScreenWidth, maskScreenHeight);
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(maskScreenX, maskScreenY, maskScreenWidth, maskScreenHeight);
+        ctx.setLineDash([]);
+
+        // 3. 计算各层统计并更新 UI
+        let statsHtml = '';
+        for (let l = 4; l >= 1; l--) {
+            const res = calculateIntersection(l, maskRect);
+            const className = `l${l}`;
+            
+            if (!res || res.count <= 0) {
+                statsHtml += `
+                    <div class="stats-card ${className}">
+                        <h3>Level L${l} (121x121)</h3>
+                        <div style="color: #999 italic">超出物理范围，无覆盖</div>
+                    </div>
+                `;
+            } else {
+                statsHtml += `
+                    <div class="stats-card ${className}">
+                        <h3>Level L${l} (121x121)</h3>
+                        <div class="stats-line"><span>X 索引范围:</span> <span>[${res.iRange[0]}, ${res.iRange[1]}]</span></div>
+                        <div class="stats-line"><span>Y 索引范围:</span> <span>[${res.jRange[0]}, ${res.jRange[1]}]</span></div>
+                        <div class="stats-line"><span>覆盖 Cell 数:</span> <span><b>${res.count}</b></span></div>
+                    </div>
+                `;
+            }
+        }
+        statsContainer.innerHTML = statsHtml;
+    }
+
+    // Init
+    resize();
+    updateParams();
+
+</script>
+</body>
+</html>

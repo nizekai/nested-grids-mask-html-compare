@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>嵌套网格与物理遮罩滑动演示</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            display: flex;
+            gap: 30px;
+            background: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .canvas-container {
+            position: relative;
+            width: 600px;
+            height: 600px;
+            border: 1px solid #ddd;
+            background-color: #fafafa;
+        }
+        canvas {
+            display: block;
+        }
+        .panel {
+            width: 350px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .control-group {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        .control-group h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 16px;
+            color: #2c3e50;
+        }
+        label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+        input[type="range"] {
+            width: 100%;
+            margin-bottom: 5px;
+        }
+        .output-box {
+            background: #282c34;
+            color: #abb2bf;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 13px;
+            overflow-y: auto;
+            flex-grow: 1;
+            white-space: pre-wrap;
+        }
+        .highlight {
+            color: #98c379;
+            font-weight: bold;
+        }
+        .legend {
+            display: flex;
+            gap: 15px;
+            font-size: 13px;
+            margin-top: 10px;
+            justify-content: center;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div>
+        <div class="canvas-container">
+            <canvas id="gridCanvas" width="600" height="600"></canvas>
+        </div>
+        <div class="legend">
+            <div class="legend-item"><div class="legend-color" style="background: rgba(231, 76, 60, 0.2); border: 1px solid #e74c3c;"></div>L1 (最细)</div>
+            <div class="legend-item"><div class="legend-color" style="background: rgba(243, 156, 18, 0.1); border: 1px dashed #f39c12;"></div>L2</div>
+            <div class="legend-item"><div class="legend-color" style="background: rgba(46, 204, 113, 0.05); border: 1px dashed #2ecc71;"></div>L3</div>
+            <div class="legend-item"><div class="legend-color" style="background: transparent; border: 1px dashed #3498db;"></div>L4 (最粗)</div>
+            <div class="legend-item"><div class="legend-color" style="background: rgba(52, 152, 219, 0.5);"></div>Mask</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="control-group">
+            <h3>Mask 参数设置</h3>
+            
+            <label>
+                <span>Mask 尺寸 (N) [L4 Cell]:</span>
+                <span id="valN">30</span>
+            </label>
+            <input type="range" id="sliderN" min="1" max="121" value="30">
+            
+            <label>
+                <span>滑动步长 (D) [L4 Cell]:</span>
+                <span id="valD">10</span>
+            </label>
+            <input type="range" id="sliderD" min="1" max="60" value="10">
+        </div>
+
+        <div class="control-group">
+            <h3>滑动控制</h3>
+            <label>
+                <span>滑动进度:</span>
+                <span id="valProgress">0 / 0</span>
+            </label>
+            <input type="range" id="sliderProgress" min="0" max="0" value="0">
+        </div>
+
+        <div class="output-box" id="outputConsole">
+            等待计算...
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gridCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // UI Elements
+    const sliderN = document.getElementById('sliderN');
+    const valN = document.getElementById('valN');
+    const sliderD = document.getElementById('sliderD');
+    const valD = document.getElementById('valD');
+    const sliderProgress = document.getElementById('sliderProgress');
+    const valProgress = document.getElementById('valProgress');
+    const outputConsole = document.getElementById('outputConsole');
+
+    // Constants
+    const CELLS = 121;
+    // Spacing multiplier: L4=8, L3=4, L2=2, L1=1 (Resolution doubles inward)
+    const SPACING = [1, 2, 4, 8]; // Index: 0->L1, 1->L2, 2->L3, 3->L4
+    const NAMES = ['L1', 'L2', 'L3', 'L4'];
+    const COLORS = ['#e74c3c', '#f39c12', '#2ecc71', '#3498db'];
+    
+    // Physical extents
+    // L4 spans 121 * 8 = 968 units. Range: [-484, 484]
+    const MAX_PHYSICAL = CELLS * SPACING[3]; 
+    const HALF_MAX = MAX_PHYSICAL / 2;
+
+    // Coordinate mapping (Physical [-484, 484] -> Canvas [0, 600])
+    function toCanvas(p) {
+        return (p + HALF_MAX) / MAX_PHYSICAL * canvas.width;
+    }
+    function toCanvasLen(len) {
+        return len / MAX_PHYSICAL * canvas.width;
+    }
+
+    // State
+    let N = parseInt(sliderN.value);
+    let D = parseInt(sliderD.value);
+    let progress = parseInt(sliderProgress.value);
+    let maxCols = 0;
+    let maxRows = 0;
+    let totalSteps = 0;
+
+    function updateState() {
+        N = parseInt(sliderN.value);
+        D = parseInt(sliderD.value);
+        valN.innerText = N;
+        valD.innerText = D;
+
+        // Calculate steps
+        // The mask can slide as long as (start + N) <= 121
+        maxCols = Math.floor((CELLS - N) / D) + 1;
+        if (maxCols < 1) maxCols = 1; 
+        maxRows = Math.floor((CELLS - N) / D) + 1;
+        if (maxRows < 1) maxRows = 1;
+
+        totalSteps = maxCols * maxRows;
+        sliderProgress.max = totalSteps - 1;
+
+        if (progress >= totalSteps) {
+            progress = totalSteps - 1;
+            sliderProgress.value = progress;
+        } else {
+            progress = parseInt(sliderProgress.value);
+        }
+
+        valProgress.innerText = `${progress + 1} / ${totalSteps}`;
+        
+        draw();
+        calculateOverlap();
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw Layers L4 to L1
+        for (let i = 3; i >= 0; i--) {
+            let s = SPACING[i];
+            let halfW = (CELLS * s) / 2;
+            
+            let cx1 = toCanvas(-halfW);
+            let cy1 = toCanvas(-halfW);
+            let cw = toCanvasLen(CELLS * s);
+            
+            ctx.beginPath();
+            ctx.rect(cx1, cy1, cw, cw);
+            
+            if (i === 0) {
+                ctx.fillStyle = 'rgba(231, 76, 60, 0.1)';
+                ctx.fill();
+                ctx.setLineDash([]);
+                ctx.lineWidth = 2;
+            } else {
+                ctx.fillStyle = i === 1 ? 'rgba(243, 156, 18, 0.02)' : (i === 2 ? 'rgba(46, 204, 113, 0.02)' : 'transparent');
+                ctx.fill();
+                ctx.setLineDash([5, 5]);
+                ctx.lineWidth = 1.5;
+            }
+            ctx.strokeStyle = COLORS[i];
+            ctx.stroke();
+
+            // Label
+            ctx.fillStyle = COLORS[i];
+            ctx.font = '12px Arial';
+            ctx.fillText(`${NAMES[i]} (${CELLS}x${CELLS})`, cx1 + 5, cy1 + 15);
+        }
+
+        // Draw Mask
+        let r = Math.floor(progress / maxCols);
+        let c = progress % maxCols;
+        
+        // Physical bounds of Mask
+        // Mask aligns with L4 top-left: -HALF_MAX
+        let mx_phys = -HALF_MAX + c * D * SPACING[3];
+        let my_phys = -HALF_MAX + r * D * SPACING[3];
+        let mw_phys = N * SPACING[3];
+
+        let cx = toCanvas(mx_phys);
+        let cy = toCanvas(my_phys);
+        let cw = toCanvasLen(mw_phys);
+
+        ctx.fillStyle = 'rgba(52, 152, 219, 0.4)';
+        ctx.fillRect(cx, cy, cw, cw);
+        
+        ctx.setLineDash([]);
+        ctx.strokeStyle = '#2980b9';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(cx, cy, cw, cw);
+    }
+
+    function calculateOverlap() {
+        let r = Math.floor(progress / maxCols);
+        let c = progress % maxCols;
+
+        let mx1 = -HALF_MAX + c * D * SPACING[3];
+        let my1 = -HALF_MAX + r * D * SPACING[3];
+        let mx2 = mx1 + N * SPACING[3];
+        let my2 = my1 + N * SPACING[3];
+
+        let outText = `=== 实时遮罩统计 ===\n`;
+        outText += `Mask位置 (L4 Grid): Col ${c*D}, Row ${r*D}\n`;
+        outText += `Mask物理范围: X[${mx1}, ${mx2}], Y[${my1}, ${my2}]\n\n`;
+
+        for (let i = 3; i >= 0; i--) {
+            let s = SPACING[i];
+            let halfW = (CELLS * s) / 2;
+            let L_min = -halfW;
+            let L_max = halfW;
+
+            // Overlap physical bounds
+            let ox1 = Math.max(mx1, L_min);
+            let oy1 = Math.max(my1, L_min);
+            let ox2 = Math.min(mx2, L_max);
+            let oy2 = Math.min(my2, L_max);
+
+            outText += `[${NAMES[i]} 层] 分辨率倍率: ${s}\n`;
+
+            if (ox1 < ox2 && oy1 < oy2) {
+                // Calculate Grid Cell Indices (0 to 120)
+                let startX = Math.round((ox1 - L_min) / s);
+                let endX = Math.round((ox2 - L_min) / s) - 1;
+                let startY = Math.round((oy1 - L_min) / s);
+                let endY = Math.round((oy2 - L_min) / s) - 1;
+
+                // Edge cases clamping due to float precision
+                startX = Math.max(0, Math.min(120, startX));
+                endX = Math.max(0, Math.min(120, endX));
+                startY = Math.max(0, Math.min(120, startY));
+                endY = Math.max(0, Math.min(120, endY));
+
+                let countX = endX - startX + 1;
+                let countY = endY - startY + 1;
+                let total = countX * countY;
+
+                outText += `  被遮盖的 Cell X 范围: [${startX}, ${endX}]\n`;
+                outText += `  被遮盖的 Cell Y 范围: [${startY}, ${endY}]\n`;
+                outText += `  总覆盖 Cell 数量: <span class="highlight">${total}</span> 个\n\n`;
+            } else {
+                outText += `  无物理重叠\n\n`;
+            }
+        }
+
+        outputConsole.innerHTML = outText;
+    }
+
+    // Event Listeners
+    sliderN.addEventListener('input', updateState);
+    sliderD.addEventListener('input', updateState);
+    sliderProgress.addEventListener('input', updateState);
+
+    // Initial call
+    updateState();
+
+</script>
+</body>
+</html>

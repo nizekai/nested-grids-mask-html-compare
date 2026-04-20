@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>嵌套网格与物理遮罩演示</title>
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --panel-bg: #ffffff;
+            --border-color: #dee2e6;
+            --text-color: #212529;
+            --primary-color: #0d6efd;
+            
+            /* 网格层级颜色 */
+            --l4-color: #adb5bd;
+            --l3-color: #20c997;
+            --l2-color: #fd7e14;
+            --l1-color: #dc3545;
+            --mask-color: rgba(13, 110, 253, 0.4);
+            --mask-border: #0d6efd;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            display: flex;
+            gap: 20px;
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        .canvas-container {
+            flex: 0 0 600px;
+            background: var(--panel-bg);
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            padding: 15px;
+            border: 1px solid var(--border-color);
+        }
+
+        canvas {
+            background-color: #fafafa;
+            border: 1px solid var(--border-color);
+        }
+
+        .panel {
+            flex: 1;
+            background: var(--panel-bg);
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-header {
+            display: flex;
+            justify-content: space-between;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .results-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .result-card {
+            border: 1px solid var(--border-color);
+            border-left: 5px solid #ccc;
+            border-radius: 4px;
+            padding: 12px;
+            background: #fdfdfd;
+        }
+
+        .result-card.L4 { border-left-color: var(--l4-color); }
+        .result-card.L3 { border-left-color: var(--l3-color); }
+        .result-card.L2 { border-left-color: var(--l2-color); }
+        .result-card.L1 { border-left-color: var(--l1-color); }
+
+        .result-header {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .result-data {
+            font-size: 13px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+        }
+
+        .legend {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 10px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .legend-item { display: flex; align-items: center; gap: 4px; }
+        .legend-color { width: 12px; height: 12px; border-radius: 2px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="canvas-container">
+        <div class="legend">
+            <div class="legend-item"><div class="legend-color" style="background: var(--l4-color);"></div>L4 (最大)</div>
+            <div class="legend-item"><div class="legend-color" style="background: var(--l3-color);"></div>L3</div>
+            <div class="legend-item"><div class="legend-color" style="background: var(--l2-color);"></div>L2</div>
+            <div class="legend-item"><div class="legend-color" style="background: var(--l1-color);"></div>L1 (最精细)</div>
+            <div class="legend-item"><div class="legend-color" style="background: var(--mask-color); border: 1px solid var(--mask-border);"></div>Mask</div>
+        </div>
+        <canvas id="gridCanvas" width="600" height="600"></canvas>
+    </div>
+
+    <div class="panel">
+        <h3>控制面板</h3>
+        
+        <div class="control-group">
+            <div class="control-header">
+                <span>Mask 窗口尺寸 (N)</span>
+                <span id="valN">20 x 20</span>
+            </div>
+            <input type="range" id="sliderN" min="10" max="60" step="1" value="20">
+        </div>
+
+        <div class="control-group">
+            <div class="control-header">
+                <span>滑动步长 (D)</span>
+                <span id="valD">5 Cells</span>
+            </div>
+            <input type="range" id="sliderD" min="1" max="20" step="1" value="5">
+        </div>
+
+        <div class="control-group">
+            <div class="control-header">
+                <span>滑动进度 (当前处于 L4 的坐标)</span>
+                <span id="valPos">[0, 0]</span>
+            </div>
+            <input type="range" id="sliderProg" min="0" max="100" step="1" value="0">
+        </div>
+
+        <hr style="width: 100%; border: 0; border-top: 1px solid var(--border-color); margin: 10px 0;">
+
+        <h3>实时物理遮盖计算</h3>
+        <div class="results-container" id="results">
+            </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gridCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // DOM 元素
+    const sliderN = document.getElementById('sliderN');
+    const sliderD = document.getElementById('sliderD');
+    const sliderProg = document.getElementById('sliderProg');
+    const valN = document.getElementById('valN');
+    const valD = document.getElementById('valD');
+    const valPos = document.getElementById('valPos');
+    const resultsContainer = document.getElementById('results');
+
+    // 核心常量
+    const CANVAS_SIZE = 600;
+    const TOTAL_PHYSICAL_SIZE = 121; // 物理总大小基准
+    const PIXELS_PER_UNIT = CANVAS_SIZE / TOTAL_PHYSICAL_SIZE;
+
+    // 四层嵌套网格定义 (共享中心点)
+    const layers = [
+        { name: 'L4', dx: 1,      offset: 0,       color: '#adb5bd' },
+        { name: 'L3', dx: 0.5,    offset: 30.25,   color: '#20c997' },
+        { name: 'L2', dx: 0.25,   offset: 45.375,  color: '#fd7e14' },
+        { name: 'L1', dx: 0.125,  offset: 52.9375, color: '#dc3545' }
+    ];
+
+    // 当前状态
+    let state = {
+        N: parseInt(sliderN.value),
+        D: parseInt(sliderD.value),
+        progress: parseInt(sliderProg.value),
+        maskX: 0,
+        maskY: 0,
+        maxSteps: 0,
+        cols: 0
+    };
+
+    // 重新计算步数范围
+    function updateLimits() {
+        // 计算在 L4 上的最大可用行列数
+        state.cols = Math.floor((TOTAL_PHYSICAL_SIZE - state.N) / state.D) + 1;
+        const rows = Math.floor((TOTAL_PHYSICAL_SIZE - state.N) / state.D) + 1;
+        
+        state.maxSteps = Math.max(0, state.cols * rows - 1);
+        sliderProg.max = state.maxSteps;
+        
+        // 约束当前进度
+        if (state.progress > state.maxSteps) {
+            state.progress = state.maxSteps;
+            sliderProg.value = state.progress;
+        }
+        
+        updateMaskPosition();
+    }
+
+    // 根据进度计算 Mask 的物理(也就是 L4)坐标
+    function updateMaskPosition() {
+        if (state.maxSteps === 0 || state.cols === 0) {
+            state.maskX = 0;
+            state.maskY = 0;
+        } else {
+            const col = state.progress % state.cols;
+            const row = Math.floor(state.progress / state.cols);
+            state.maskX = col * state.D;
+            state.maskY = row * state.D;
+        }
+        
+        valPos.textContent = `[X: ${state.maskX}, Y: ${state.maskY}]`;
+        render();
+        calculateOverlap();
+    }
+
+    // 绘制主循环
+    function render() {
+        ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+        // 1. 画各层边界
+        layers.forEach(layer => {
+            const size = 121 * layer.dx;
+            const pxOffset = layer.offset * PIXELS_PER_UNIT;
+            const pxSize = size * PIXELS_PER_UNIT;
+
+            ctx.beginPath();
+            ctx.rect(pxOffset, pxOffset, pxSize, pxSize);
+            ctx.strokeStyle = layer.color;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // 标注文字
+            ctx.fillStyle = layer.color;
+            ctx.font = 'bold 14px Arial';
+            ctx.fillText(layer.name, pxOffset + 5, pxOffset + 18);
+        });
+
+        // 2. 画 Mask
+        const pxMaskX = state.maskX * PIXELS_PER_UNIT;
+        const pxMaskY = state.maskY * PIXELS_PER_UNIT;
+        const pxMaskSize = state.N * PIXELS_PER_UNIT;
+
+        ctx.fillStyle = 'rgba(13, 110, 253, 0.3)';
+        ctx.fillRect(pxMaskX, pxMaskY, pxMaskSize, pxMaskSize);
+        ctx.strokeStyle = '#0d6efd';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(pxMaskX, pxMaskY, pxMaskSize, pxMaskSize);
+    }
+
+    // 核心算法：计算遮盖索引
+    function calculateOverlap() {
+        const maskBounds = {
+            left: state.maskX, 
+            right: state.maskX + state.N,
+            top: state.maskY, 
+            bottom: state.maskY + state.N
+        };
+
+        resultsContainer.innerHTML = '';
+
+        layers.forEach(layer => {
+            const layerSize = 121 * layer.dx;
+            const layerBounds = {
+                left: layer.offset, right: layer.offset + layerSize,
+                top: layer.offset, bottom: layer.offset + layerSize
+            };
+
+            // 物理相交范围
+            const intersectLeft = Math.max(maskBounds.left, layerBounds.left);
+            const intersectRight = Math.min(maskBounds.right, layerBounds.right);
+            const intersectTop = Math.max(maskBounds.top, layerBounds.top);
+            const intersectBottom = Math.min(maskBounds.bottom, layerBounds.bottom);
+
+            let coveredStr = '';
+            let colRange = '无';
+            let rowRange = '无';
+            let cellsCount = 0;
+            let bgColor = '#f8f9fa';
+
+            // 判断是否存在真实遮盖
+            if (intersectLeft < intersectRight && intersectTop < intersectBottom) {
+                // 转为该层的网格索引
+                const startCol = Math.floor((intersectLeft - layer.offset) / layer.dx);
+                // Math.ceil() - 1 用于处理刚好在边界上的开闭区间逻辑
+                const endCol = Math.ceil((intersectRight - layer.offset) / layer.dx) - 1;
+                const startRow = Math.floor((intersectTop - layer.offset) / layer.dx);
+                const endRow = Math.ceil((intersectBottom - layer.offset) / layer.dx) - 1;
+
+                // 修正浮点精度可能导致的极小负数计算
+                const validStartCol = Math.max(0, startCol);
+                const validEndCol = Math.min(120, endCol);
+                const validStartRow = Math.max(0, startRow);
+                const validEndRow = Math.min(120, endRow);
+
+                if(validEndCol >= validStartCol && validEndRow >= validStartRow) {
+                    const colsCount = validEndCol - validStartCol + 1;
+                    const rowsCount = validEndRow - validStartRow + 1;
+                    cellsCount = colsCount * rowsCount;
+                    
+                    colRange = `[${validStartCol}, ${validEndCol}]`;
+                    rowRange = `[${validStartRow}, ${validEndRow}]`;
+                    bgColor = '#e6f2ff'; // 被覆盖时高亮底色
+                }
+            }
+
+            // 构建结果卡片 DOM
+            const card = document.createElement('div');
+            card.className = `result-card ${layer.name}`;
+            card.style.backgroundColor = bgColor;
+            
+            card.innerHTML = `
+                <div class="result-header">
+                    <span>${layer.name} 网格 (dx=${layer.dx})</span>
+                    <span>覆盖: <strong style="color: ${cellsCount > 0 ? '#0d6efd' : '#6c757d'}">${cellsCount} Cells</strong></span>
+                </div>
+                <div class="result-data">
+                    <div><strong>Col 范围 (X):</strong> ${colRange}</div>
+                    <div><strong>Row 范围 (Y):</strong> ${rowRange}</div>
+                </div>
+            `;
+            resultsContainer.appendChild(card);
+        });
+    }
+
+    // 事件监听
+    sliderN.addEventListener('input', (e) => {
+        state.N = parseInt(e.target.value);
+        valN.textContent = `${state.N} x ${state.N}`;
+        updateLimits();
+    });
+
+    sliderD.addEventListener('input', (e) => {
+        state.D = parseInt(e.target.value);
+        valD.textContent = `${state.D} Cells`;
+        updateLimits();
+    });
+
+    sliderProg.addEventListener('input', (e) => {
+        state.progress = parseInt(e.target.value);
+        updateMaskPosition();
+    });
+
+    // 初始化
+    updateLimits();
+
+</script>
+</body>
+</html>

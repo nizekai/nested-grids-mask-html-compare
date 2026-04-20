@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nested Grids & Mask Sliding — mimo-v2-pro</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f1117;color:#e0e0e0;font-family:'Segoe UI',monospace;display:flex;height:100vh;overflow:hidden}
+#left{flex:1;display:flex;align-items:center;justify-content:center;position:relative}
+#right{width:400px;background:#181b24;padding:20px;overflow-y:auto;border-left:1px solid #2a2e3a}
+canvas{border-radius:6px}
+h2{font-size:15px;color:#7ec8e3;margin-bottom:10px;border-bottom:1px solid #2a2e3a;padding-bottom:6px}
+.ctrl{margin-bottom:14px}
+.ctrl label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;color:#aab}
+.ctrl label span{color:#7ec8e3;font-weight:bold}
+input[type=range]{width:100%;accent-color:#7ec8e3}
+.btn-row{display:flex;gap:8px;margin:10px 0}
+button{flex:1;padding:7px 0;border:1px solid #3a3e4a;background:#22262f;color:#e0e0e0;border-radius:4px;cursor:pointer;font-size:13px}
+button:hover{background:#2c3040}
+button.active{background:#7ec8e3;color:#0f1117;border-color:#7ec8e3}
+.info-box{background:#12141c;border:1px solid #2a2e3a;border-radius:5px;padding:10px;font-size:12px;line-height:1.7;margin-top:8px}
+.info-box .layer-title{font-weight:bold;margin-top:6px}
+.L1{color:#ff6b6b}.L2{color:#feca57}.L3{color:#48dbfb}.L4{color:#a29bfe}
+.legend{display:flex;gap:14px;margin:10px 0;font-size:12px}
+.legend span::before{content:'';display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.legend .l1::before{background:#ff6b6b}.legend .l2::before{background:#feca57}
+.legend .l3::before{background:#48dbfb}.legend .l4::before{background:#a29bfe}
+.legend .mask::before{background:rgba(0,255,136,0.25);border:1px solid #00ff88}
+#progress-val{text-align:center;font-size:12px;color:#888;margin-top:2px}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:11px}
+.stats-grid .sg-label{color:#888}.stats-grid .sg-val{text-align:right;color:#e0e0e0}
+</style>
+</head>
+<body>
+<div id="left"><canvas id="c"></canvas></div>
+<div id="right">
+  <h2>⚙️ Parameters</h2>
+  <div class="ctrl">
+    <label>Mask Size (N × N cells on L4) <span id="v-n">5</span></label>
+    <input type="range" id="s-n" min="1" max="40" value="5">
+  </div>
+  <div class="ctrl">
+    <label>Step Size (D cells) <span id="v-d">3</span></label>
+    <input type="range" id="s-d" min="1" max="20" value="3">
+  </div>
+  <div class="ctrl">
+    <label>Slide Progress <span id="v-p">0%</span></label>
+    <input type="range" id="s-p" min="0" max="100" value="0">
+  </div>
+  <div id="progress-val">Position: L4 cell (0, 0)</div>
+  <div class="btn-row">
+    <button id="btn-play">▶ Play</button>
+    <button id="btn-reset">⟲ Reset</button>
+  </div>
+  <div class="legend">
+    <span class="l1">L1</span><span class="l2">L2</span>
+    <span class="l3">L3</span><span class="l4">L4</span><span class="mask">Mask</span>
+  </div>
+
+  <h2>📊 Cell Coverage Report</h2>
+  <div id="report" class="info-box">—</div>
+
+  <h2>🔢 Quick Stats</h2>
+  <div id="stats" class="info-box">—</div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+/* ── constants ── */
+const CELLS   = 121;                       // cells per side, every layer
+const LAYERS  = ['L1','L2','L3','L4'];
+const COLORS  = {L1:'#ff6b6b',L2:'#feca57',L3:'#48dbfb',L4:'#a29bfe'};
+const MASK_FILL = 'rgba(0,255,136,0.18)';
+const MASK_STROKE = '#00ff88';
+const MARGIN  = 30;                        // canvas margin px
+
+/* ── state ── */
+let N=5, D=3, progress=0, playing=false, animId=null;
+
+/* ── DOM refs ── */
+const sN=document.getElementById('s-n'), sD=document.getElementById('s-d'), sP=document.getElementById('s-p');
+const vN=document.getElementById('v-n'), vD=document.getElementById('v-d'), vP=document.getElementById('v-p');
+const btnPlay=document.getElementById('btn-play'), btnReset=document.getElementById('btn-reset');
+const reportEl=document.getElementById('report'), statsEl=document.getElementById('stats');
+const progressVal=document.getElementById('progress-val');
+
+/* ── canvas sizing ── */
+function resize(){
+  const left=document.getElementById('left');
+  const sz=Math.min(left.clientWidth,left.clientHeight)-20;
+  canvas.width=canvas.height=sz;
+  draw();
+}
+window.addEventListener('resize',resize);
+
+/* ── helper: L4 physical coords (cells → [-60,60]) ── */
+function l4CellToPhys(ci,cj){ return { x: ci-60, y: cj-60 }; }
+/* physical extent of L4 = 120 units each side */
+
+/* ── compute mask sliding position ── */
+function getMaskPos(){
+  const maxCol = CELLS - N;                    // last valid start col
+  const maxRow = CELLS - N;                    // last valid start row
+  const stepCols = Math.max(1, Math.floor(maxCol / D) + 1);
+  const stepRows = Math.max(1, Math.floor(maxRow / D) + 1);
+  const totalSteps = stepCols * stepRows - 1;
+  const k = Math.round(progress * totalSteps);
+  const row = Math.floor(k / stepCols);
+  const col = k % stepCols;
+  const si = Math.min(row * D, maxRow);
+  const sj = Math.min(col * D, maxCol);
+  return {si, sj, k, totalSteps, stepRows, stepCols};
+}
+
+/* ── compute physical region of mask ── */
+function maskPhysRegion(si,sj){
+  const p0 = l4CellToPhys(si, sj);
+  const p1 = l4CellToPhys(si+N, sj+N);
+  return { x0:p0.x, y0:p0.y, x1:p1.x, y1:p1.y };
+}
+
+/* ── cell coverage for each layer ── */
+function computeCoverage(mask){
+  const results = {};
+  for(let li=0;li<4;li++){
+    const layer = LAYERS[li];
+    const scale = 1 << (3-li);  // L1=8, L2=4, L3=2, L4=1
+    const dx = 1.0 / scale;     // physical spacing of this layer
+
+    // layer cells go from 0..120, physical coord = (c-60)*dx
+    // mask x0..x1 in L4-physical units
+    // cell c covers phys range [(c-60)*dx - dx/2, (c-60)*dx + dx/2]
+    // actually, cell c covers [(c-60)*dx, (c-60+1)*dx] if we treat cells as unit squares
+    // Let's use: cell index c in layer maps to physical x in [(c-60)*dx, (c-60+1)*dx)
+
+    let ci_min=121, ci_max=-1, cj_min=121, cj_max=-1;
+    let count=0;
+    const covered=[];
+
+    for(let c=0;c<CELLS;c++){
+      const px0 = (c-60)*dx;
+      const px1 = (c-60+1)*dx;
+      // check overlap with mask [mask.x0, mask.x1]
+      if(px1 > mask.x0 && px0 < mask.x1){
+        if(c < ci_min) ci_min=c;
+        if(c > ci_max) ci_max=c;
+      }
+    }
+    for(let c=0;c<CELLS;c++){
+      const py0 = (c-60)*dx;
+      const py1 = (c-60+1)*dx;
+      if(py1 > mask.y0 && py0 < mask.y1){
+        if(c < cj_min) cj_min=c;
+        if(c > cj_max) cj_max=c;
+      }
+    }
+
+    if(ci_max<0 || cj_max<0){ ci_min=ci_max=cj_min=cj_max=-1; count=0; }
+    else { count = (ci_max-ci_min+1) * (cj_max-cj_min+1); }
+
+    results[layer] = {ci_min,ci_max,cj_min,cj_max,count,scale,dx};
+  }
+  return results;
+}
+
+/* ── pixel mapping ── */
+// L4 physical range: x,y ∈ [-60, 60] → 120 units
+// All layers share the same center
+function physToPixel(px,py){
+  const w = canvas.width - 2*MARGIN;
+  const half = 60;  // L4 half-extent
+  const scale = w / (2*half);
+  return {
+    x: MARGIN + (px + half) * scale,
+    y: MARGIN + (py + half) * scale
+  };
+}
+function cellSpanPx(){
+  const w = canvas.width - 2*MARGIN;
+  return w / 120;  // L4 single cell in px
+}
+
+/* ── draw ── */
+function draw(){
+  const W=canvas.width, H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#0f1117';
+  ctx.fillRect(0,0,W,H);
+
+  const mp = getMaskPos();
+  const mask = maskPhysRegion(mp.si, mp.sj);
+  const cov = computeCoverage(mask);
+
+  // draw grid lines for each layer
+  for(let li=0;li<4;li++){
+    const layer=LAYERS[li];
+    const scale = 1 << (3-li);
+    const dx = 1.0/scale;
+    const col = COLORS[layer];
+    ctx.strokeStyle = col;
+    ctx.globalAlpha = 0.25;
+    ctx.lineWidth = 0.5;
+
+    // vertical lines
+    for(let c=0;c<=CELLS;c+= (scale>=4?4: scale>=2?2:1)){
+      const px = (c-60)*dx;
+      const top = physToPixel(px, 60);
+      const bot = physToPixel(px, -60);
+      // only draw if within L4 extent
+      if(px >= -60.01 && px <= 60.01){
+        ctx.beginPath();
+        ctx.moveTo(top.x, MARGIN);
+        ctx.lineTo(bot.x, H-MARGIN);
+        ctx.stroke();
+      }
+    }
+    // horizontal lines
+    for(let c=0;c<=CELLS;c+= (scale>=4?4: scale>=2?2:1)){
+      const py = (c-60)*dx;
+      if(py >= -60.01 && py <= 60.01){
+        const lft = physToPixel(-60, py);
+        const rgt = physToPixel(60, py);
+        ctx.beginPath();
+        ctx.moveTo(MARGIN, lft.y);
+        ctx.lineTo(W-MARGIN, rgt.y);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha=1;
+  }
+
+  // draw layer boundaries
+  for(let li=0;li<4;li++){
+    const layer=LAYERS[li];
+    const scale = 1 << (3-li);
+    const dx = 1.0/scale;
+    const col = COLORS[layer];
+    const half = 60*dx;  // half extent of this layer
+
+    const tl = physToPixel(-half, -half);
+    const br = physToPixel(half, half);
+    const bw = br.x-tl.x, bh = br.y-tl.y;
+
+    ctx.strokeStyle=col;
+    ctx.lineWidth=2;
+    ctx.globalAlpha=0.7;
+    ctx.strokeRect(tl.x, tl.y, bw, bh);
+
+    // label
+    ctx.globalAlpha=1;
+    ctx.fillStyle=col;
+    ctx.font='bold 12px monospace';
+    ctx.fillText(layer, tl.x+4, tl.y+14);
+
+    // cell count label
+    ctx.font='10px monospace';
+    ctx.globalAlpha=0.6;
+    ctx.fillText('121×121', tl.x+4, tl.y+26);
+    ctx.globalAlpha=1;
+  }
+
+  // draw covered cells for each layer
+  for(let li=0;li<4;li++){
+    const layer=LAYERS[li];
+    const info = cov[layer];
+    if(info.ci_min < 0) continue;
+
+    const scale = 1 << (3-li);
+    const dx = 1.0/scale;
+    const col = COLORS[layer];
+
+    const tl = physToPixel((info.ci_min-60)*dx, (info.cj_min-60)*dx);
+    const br = physToPixel((info.ci_max+1-60)*dx, (info.cj_max+1-60)*dx);
+
+    ctx.fillStyle = col;
+    ctx.globalAlpha = 0.08 + 0.04*(3-li);
+    ctx.fillRect(tl.x, tl.y, br.x-tl.x, br.y-tl.y);
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tl.x, tl.y, br.x-tl.x, br.y-tl.y);
+    ctx.globalAlpha = 1;
+  }
+
+  // draw mask on L4
+  const mtl = physToPixel(mask.x0, mask.y0);
+  const mbr = physToPixel(mask.x1, mask.y1);
+  const mw = mbr.x-mtl.x, mh = mbr.y-mtl.y;
+
+  ctx.fillStyle = MASK_FILL;
+  ctx.fillRect(mtl.x, mtl.y, mw, mh);
+  ctx.strokeStyle = MASK_STROKE;
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([6,3]);
+  ctx.strokeRect(mtl.x, mtl.y, mw, mh);
+  ctx.setLineDash([]);
+
+  // mask label
+  ctx.fillStyle='#00ff88';
+  ctx.font='bold 11px monospace';
+  ctx.fillText(`Mask ${N}×${N}`, mtl.x+4, mtl.y+14);
+
+  // draw center crosshair
+  const ctr = physToPixel(0,0);
+  ctx.strokeStyle='rgba(255,255,255,0.3)';
+  ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(ctr.x-8,ctr.y); ctx.lineTo(ctr.x+8,ctr.y);
+  ctx.moveTo(ctr.x,ctr.y-8); ctx.lineTo(ctr.x,ctr.y+8);
+  ctx.stroke();
+
+  // update info
+  updateReport(cov, mp, mask);
+}
+
+/* ── update report ── */
+function updateReport(cov, mp, mask){
+  const si=mp.si, sj=mp.sj;
+  progressVal.textContent = `Position: L4 cell (${si}, ${sj})  —  step ${mp.k}/${mp.totalSteps}`;
+
+  let html = '';
+  for(let li=3;li>=0;li--){
+    const layer=LAYERS[li];
+    const info=cov[layer];
+    const col=COLORS[layer];
+    const scale=1<<(3-li);
+    html += `<div class="layer-title ${layer}">${layer} (×${scale} resolution)</div>`;
+    if(info.ci_min<0){
+      html += `  No cells covered<br>`;
+    } else {
+      html += `  <b>${info.count}</b> cells covered<br>`;
+      html += `  i ∈ [${info.ci_min}, ${info.ci_max}]  j ∈ [${info.cj_min}, ${info.cj_max}]<br>`;
+    }
+  }
+  reportEl.innerHTML = html;
+
+  // stats
+  let shtml = '<div class="stats-grid">';
+  for(let li=3;li>=0;li--){
+    const layer=LAYERS[li];
+    const info=cov[layer];
+    shtml += `<span class="sg-label ${layer}">${layer}:</span><span class="sg-val">${info.count} cells</span>`;
+  }
+  const physW = mask.x1-mask.x0;
+  shtml += `<span class="sg-label">Physical size:</span><span class="sg-val">${physW.toFixed(2)} L4-units</span>`;
+  shtml += `<span class="sg-label">L4 mask cells:</span><span class="sg-val">${N}×${N} = ${N*N}</span>`;
+  shtml += '</div>';
+  statsEl.innerHTML = shtml;
+}
+
+/* ── animation ── */
+function animStep(){
+  if(!playing) return;
+  progress += 0.003;
+  if(progress>1){ progress=1; playing=false; btnPlay.textContent='▶ Play'; btnPlay.classList.remove('active'); }
+  sP.value = Math.round(progress*100);
+  vP.textContent = Math.round(progress*100)+'%';
+  draw();
+  if(playing) animId = requestAnimationFrame(animStep);
+}
+
+/* ── events ── */
+sN.addEventListener('input',()=>{ N=+sN.value; vN.textContent=N; draw(); });
+sD.addEventListener('input',()=>{ D=+sD.value; vD.textContent=D; draw(); });
+sP.addEventListener('input',()=>{ progress=+sP.value/100; vP.textContent=sP.value+'%'; draw(); });
+btnPlay.addEventListener('click',()=>{
+  if(playing){ playing=false; btnPlay.textContent='▶ Play'; btnPlay.classList.remove('active'); cancelAnimationFrame(animId); }
+  else{ if(progress>=1) progress=0; playing=true; btnPlay.textContent='⏸ Pause'; btnPlay.classList.add('active'); animStep(); }
+});
+btnReset.addEventListener('click',()=>{
+  playing=false; progress=0; sP.value=0; vP.textContent='0%';
+  btnPlay.textContent='▶ Play'; btnPlay.classList.remove('active');
+  cancelAnimationFrame(animId); draw();
+});
+
+/* ── init ── */
+resize();
+</script>
+</body>
+</html>

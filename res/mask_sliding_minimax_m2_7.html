@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nested Grids &amp; Physical Mask Sliding</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+  h1 { font-size: 1.2rem; margin-bottom: 16px; color: #58a6ff; }
+  .container { display: flex; gap: 24px; align-items: flex-start; max-width: 1200px; width: 100%; }
+  canvas { background: #161b22; border-radius: 8px; border: 1px solid #30363d; }
+  .panel { flex: 1; min-width: 280px; background: #161b22; border-radius: 8px; border: 1px solid #30363d; padding: 16px; }
+  .panel h2 { font-size: 0.95rem; color: #58a6ff; margin-bottom: 12px; border-bottom: 1px solid #30363d; padding-bottom: 8px; }
+  .control-group { margin-bottom: 14px; }
+  .control-group label { display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 4px; color: #8b949e; }
+  .control-group label span { color: #e6edf3; font-weight: 600; }
+  input[type="range"] { width: 100%; height: 4px; -webkit-appearance: none; background: #30363d; border-radius: 2px; outline: none; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; background: #58a6ff; border-radius: 50%; cursor: pointer; }
+  .progress-group { margin-bottom: 14px; }
+  .progress-group label { display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 4px; color: #8b949e; }
+  .progress-group label span { color: #e6edf3; font-weight: 600; }
+  input[type="range"].big { height: 6px; }
+  .btn-row { display: flex; gap: 8px; margin-bottom: 14px; }
+  button { flex: 1; padding: 6px 12px; background: #21262d; border: 1px solid #30363d; color: #e6edf3; border-radius: 4px; cursor: pointer; font-size: 0.82rem; transition: background 0.15s; }
+  button:hover { background: #30363d; }
+  button.primary { background: #238636; border-color: #238636; }
+  button.primary:hover { background: #2ea043; }
+  .info-box { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 10px; font-size: 0.78rem; line-height: 1.7; color: #8b949e; }
+  .info-box .layer-row { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid #21262d; }
+  .info-box .layer-row:last-child { border-bottom: none; }
+  .info-box .layer-name { color: #58a6ff; font-weight: 600; }
+  .info-box .cell-range { color: #7ee787; }
+  .info-box .cell-count { color: #ffa657; font-weight: 600; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 0.78rem; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .swatch { width: 16px; height: 16px; border-radius: 2px; border: 1px solid #444; }
+  .summary { margin-top: 10px; padding: 8px; background: #0d1117; border-radius: 4px; font-size: 0.78rem; color: #8b949e; }
+  .summary strong { color: #e6edf3; }
+</style>
+</head>
+<body>
+<h1>Nested Grids &amp; Physical Mask Sliding</h1>
+<div class="container">
+  <canvas id="canvas" width="560" height="680"></canvas>
+  <div class="panel">
+    <h2>Parameters</h2>
+    <div class="control-group">
+      <label>Mask Window Size N (cells on L4) <span id="valN">11</span></label>
+      <input type="range" id="sliderN" min="3" max="61" step="2" value="11">
+    </div>
+    <div class="control-group">
+      <label>Slide Step D (cells on L4) <span id="valD">5</span></label>
+      <input type="range" id="sliderD" min="1" max="30" step="1" value="5">
+    </div>
+    <div class="progress-group">
+      <label>Mask Position <span id="valPos">0 / 111</span></label>
+      <input type="range" id="sliderPos" class="big" min="0" max="111" step="1" value="0">
+    </div>
+    <div class="btn-row">
+      <button id="btnPlay" class="primary">Play</button>
+      <button id="btnReset">Reset</button>
+    </div>
+    <h2>Coverage per Layer</h2>
+    <div class="info-box" id="infoBox">
+      <div style="text-align:center;color:#484f58;">Adjust parameters to see coverage</div>
+    </div>
+    <div class="summary" id="summary"></div>
+  </div>
+</div>
+<div class="legend">
+  <div class="legend-item"><div class="swatch" style="background:#ffffff22;"></div>L4 (coarsest)</div>
+  <div class="legend-item"><div class="swatch" style="background:#ffffff44;"></div>L3</div>
+  <div class="legend-item"><div class="swatch" style="background:#ffffff66;"></div>L2</div>
+  <div class="legend-item"><div class="swatch" style="background:#ffffff88;"></div>L1 (finest)</div>
+  <div class="legend-item"><div class="swatch" style="background:#ff6b3522;outline:1px solid #ff6b35;"></div>Mask Window</div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const DIM = 121;
+const LAYERS = ['L4', 'L3', 'L2', 'L1'];
+const LEVELS = [0, 1, 2, 3];
+
+const MARGIN_LEFT = 40;
+const MARGIN_TOP = 20;
+const MARGIN_BOTTOM = 20;
+const DRAW_W = W - MARGIN_LEFT - 20;
+const DRAW_H = H - MARGIN_TOP - MARGIN_BOTTOM;
+
+const COLORS = ['#ff6b35', '#4ecdc4', '#45b7d1', '#96ceb4'];
+const BG_ALPHA = ['22', '44', '66', '88'];
+
+let N = 11;
+let D = 5;
+let pos = 0;
+let animId = null;
+let playing = false;
+
+const sliderN = document.getElementById('sliderN');
+const sliderD = document.getElementById('sliderD');
+const sliderPos = document.getElementById('sliderPos');
+const valN = document.getElementById('valN');
+const valD = document.getElementById('valD');
+const valPos = document.getElementById('valPos');
+const btnPlay = document.getElementById('btnPlay');
+const btnReset = document.getElementById('btnReset');
+const infoBox = document.getElementById('infoBox');
+const summary = document.getElementById('summary');
+
+function physSize(level) {
+  return Math.pow(2, 3 - level);
+}
+
+function calcCoverage() {
+  const n4 = N;
+  const d4 = D;
+  const maxPos = DIM - n4;
+  const start4 = pos * d4;
+  const end4 = start4 + n4 - 1;
+  const r4 = { start: start4, end: end4, count: n4 };
+
+  const levels = [3, 2, 1, 0];
+  const results = [];
+  for (const lv of levels) {
+    const phys = physSize(lv);
+    const nL = n4 * phys;
+    const startL = start4 * phys;
+    const endL = startL + nL - 1;
+    const countL = Math.max(0, Math.min(endL, DIM - 1) - Math.max(startL, 0) + 1);
+    results.push({
+      name: `L${lv + 1}`,
+      physSize: phys,
+      r: { start: Math.max(0, startL), end: Math.min(DIM - 1, endL), count: countL }
+    });
+  }
+  return results;
+}
+
+function drawGrid(level) {
+  const phys = physSize(level);
+  const px = phys;
+  const color = COLORS[level];
+  const bg = BG_ALPHA[level];
+
+  ctx.strokeStyle = color + '55';
+  ctx.lineWidth = 0.5;
+
+  const stepPx = (DRAW_W / DIM) * px;
+  const x0 = MARGIN_LEFT;
+  const y0 = MARGIN_TOP + level * (DRAW_H / 4);
+
+  for (let i = 0; i <= DIM; i++) {
+    const xi = x0 + i * (DRAW_W / DIM) * px;
+    ctx.beginPath();
+    ctx.moveTo(xi, y0);
+    ctx.lineTo(xi, y0 + DRAW_H / 4 - 2);
+    ctx.stroke();
+  }
+  for (let j = 0; j <= DIM; j++) {
+    const yj = y0 + j * (DRAW_H / 4 / DIM) * px;
+    ctx.beginPath();
+    ctx.moveTo(x0, yj);
+    ctx.lineTo(x0 + DRAW_W, yj);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = color;
+  ctx.font = '11px Segoe UI';
+  ctx.fillText(`L${level + 1} (dx=${px}, 121×121)`, x0 + 4, y0 + 14);
+}
+
+function drawMaskWindow() {
+  const phys4 = physSize(3);
+  const cellPx = DRAW_W / DIM;
+  const physPx = cellPx * phys4;
+
+  const start4 = pos * D * phys4;
+  const nPx = N * phys4;
+
+  for (let lv = 3; lv >= 0; lv--) {
+    const phys = physSize(lv);
+    const y0 = MARGIN_TOP + lv * (DRAW_H / 4);
+
+    const x0 = MARGIN_LEFT + start4 * (cellPx * phys);
+    const w = nPx * phys;
+    const h = (DRAW_H / 4 - 2) * phys;
+
+    ctx.fillStyle = COLORS[lv] + '15';
+    ctx.strokeStyle = '#ff6b35aa';
+    ctx.lineWidth = lv === 3 ? 1.5 : 1;
+    ctx.fillRect(x0, y0, w, h);
+    ctx.strokeRect(x0, y0, w, h);
+  }
+
+  ctx.strokeStyle = '#ff6b35';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(MARGIN_LEFT + start4 * cellPx, MARGIN_TOP + 3 * (DRAW_H / 4), N * phys4 * cellPx, DRAW_H / 4 - 8);
+
+  const phys = physSize(3);
+  const sx = MARGIN_LEFT + start4 * cellPx;
+  const sy = MARGIN_TOP + 3 * (DRAW_H / 4);
+  const mx = sx + N * phys4 * cellPx / 2;
+  const my = sy + (DRAW_H / 4 - 8) / 2;
+  ctx.fillStyle = '#ff6b35';
+  ctx.font = 'bold 10px Segoe UI';
+  ctx.textAlign = 'center';
+  ctx.fillText(`Mask`, mx, my - 4);
+  ctx.font = '9px Segoe UI';
+  ctx.fillText(`${N}×${N} on L4`, mx, my + 8);
+  ctx.textAlign = 'left';
+}
+
+function updateInfo() {
+  const cov = calcCoverage();
+  let html = '';
+  for (const c of cov) {
+    html += `<div class="layer-row">
+      <span class="layer-name">${c.name}</span>
+      <span class="cell-range">[${c.r.start}–${c.r.end}] (dx=${c.physSize})</span>
+      <span class="cell-count">${c.r.count} cells</span>
+    </div>`;
+  }
+  infoBox.innerHTML = html;
+
+  const total = cov[0].r.count;
+  const uniqueL1 = calcUniqueL1(cov);
+  summary.innerHTML = `<strong>Summary:</strong> L4 window <strong>${N}×${N}</strong> at step <strong>${pos}</strong> covers <strong>${total}</strong> L4 cells. Mapped to <strong>${uniqueL1}</strong> unique L1 cells (effective resolution).`;
+}
+
+function calcUniqueL1(cov) {
+  const l1r = cov[3].r;
+  if (l1r.count === 0) return 0;
+  return l1r.count;
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  for (let i = 3; i >= 0; i--) {
+    drawGrid(i);
+  }
+  drawMaskWindow();
+  updateInfo();
+}
+
+sliderN.addEventListener('input', () => {
+  N = parseInt(sliderN.value);
+  valN.textContent = N;
+  pos = 0;
+  sliderPos.value = 0;
+  valPos.textContent = `0 / ${DIM - N}`;
+  draw();
+});
+
+sliderD.addEventListener('input', () => {
+  D = parseInt(sliderD.value);
+  valD.textContent = D;
+  pos = 0;
+  sliderPos.value = 0;
+  valPos.textContent = `0 / ${DIM - N}`;
+  draw();
+});
+
+sliderPos.addEventListener('input', () => {
+  pos = parseInt(sliderPos.value);
+  valPos.textContent = `${pos} / ${DIM - N}`;
+  draw();
+});
+
+btnPlay.addEventListener('click', () => {
+  if (playing) {
+    playing = false;
+    cancelAnimationFrame(animId);
+    btnPlay.textContent = 'Play';
+  } else {
+    playing = true;
+    btnPlay.textContent = 'Pause';
+    const maxPos = DIM - N;
+    function step() {
+      pos = parseInt(sliderPos.value);
+      if (pos >= maxPos) {
+        playing = false;
+        btnPlay.textContent = 'Play';
+        return;
+      }
+      pos++;
+      sliderPos.value = pos;
+      valPos.textContent = `${pos} / ${maxPos}`;
+      draw();
+      animId = setTimeout(step, 80);
+    }
+    step();
+  }
+});
+
+btnReset.addEventListener('click', () => {
+  playing = false;
+  cancelAnimationFrame(animId);
+  btnPlay.textContent = 'Play';
+  pos = 0;
+  sliderPos.value = 0;
+  valPos.textContent = `0 / ${DIM - N}`;
+  draw();
+});
+
+draw();
+</script>
+</body>
+</html>

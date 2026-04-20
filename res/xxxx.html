@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>mask_sliding_gpt5.4high</title>
+  <style>
+    :root {
+      --bg0: #f7fafb;
+      --bg1: #eef3f6;
+      --panel: #ffffff;
+      --line: #d9e1e7;
+      --text: #15202b;
+      --muted: #667784;
+      --accent: #0f766e;
+      --shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 8% 10%, rgba(15, 118, 110, 0.08), transparent 24%),
+        linear-gradient(180deg, var(--bg0), var(--bg1));
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(680px, 1fr) 430px;
+      gap: 18px;
+      padding: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(217, 225, 231, 0.95);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .left {
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    .right {
+      padding: 18px;
+      position: sticky;
+      top: 18px;
+      align-self: start;
+    }
+
+    h1, h2 {
+      margin: 0;
+    }
+
+    .head {
+      margin-bottom: 12px;
+    }
+
+    .head h1 {
+      font-size: 22px;
+      margin-bottom: 6px;
+    }
+
+    .head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      background:
+        linear-gradient(180deg, rgba(15, 118, 110, 0.035), transparent 20%),
+        linear-gradient(180deg, #fcfdfd, #f7fafc);
+      border: 1px solid #e6edf2;
+      border-radius: 14px;
+    }
+
+    .block + .block {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid #edf2f5;
+    }
+
+    .block h2 {
+      font-size: 17px;
+      margin-bottom: 12px;
+    }
+
+    .control-row + .control-row {
+      margin-top: 14px;
+    }
+
+    .control-row label {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .control-row small {
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .buttons {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    button {
+      border: 1px solid #ced7de;
+      background: #ffffff;
+      color: var(--text);
+      padding: 9px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: 0.16s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      border-color: #9fb0bc;
+    }
+
+    button.primary {
+      background: linear-gradient(180deg, #0f766e, #0a5f59);
+      border-color: #0a5f59;
+      color: #ffffff;
+    }
+
+    .meta {
+      display: grid;
+      gap: 8px;
+    }
+
+    .meta-card {
+      background: #f8fafb;
+      border: 1px solid #e8eef2;
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+
+    .meta-key {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .meta-card div:last-child {
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .legend-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+    }
+
+    .swatch {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      border: 2px solid currentColor;
+      background: rgba(255, 255, 255, 0.6);
+      flex: 0 0 auto;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 9px 6px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid #eef2f5;
+    }
+
+    th {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: #f3f6f8;
+      border: 1px solid #e4eaef;
+      border-radius: 6px;
+      padding: 1px 5px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .note {
+      margin-top: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #6b5d1e;
+      background: #fcfbf3;
+      border: 1px solid #ece4bf;
+      border-radius: 12px;
+    }
+
+    @media (max-width: 1120px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .right {
+        position: static;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="panel left">
+      <div class="head">
+        <h1>Nested Grids × Physical Mask</h1>
+        <p>
+          同一物理坐标系下的 4 层嵌套网格。L4 最大且最粗；向内到 L1，每层分辨率翻倍、物理范围减半。
+          红色窗口是 L4 上定义的真实物理 Mask，在所有层中对应同一个物理区域。
+        </p>
+      </div>
+      <canvas id="viz" width="900" height="860"></canvas>
+    </section>
+
+    <aside class="panel right">
+      <div class="block">
+        <h2>参数</h2>
+
+        <div class="control-row">
+          <label for="nSlider">
+            <span>Mask 尺寸 N</span>
+            <small><span id="nValue">25</span> × <span id="nValue2">25</span> (L4 Cell)</small>
+          </label>
+          <input id="nSlider" type="range" min="1" max="121" step="1" value="25" />
+        </div>
+
+        <div class="control-row">
+          <label for="dSlider">
+            <span>步长 D</span>
+            <small><span id="dValue">8</span> Cell</small>
+          </label>
+          <input id="dSlider" type="range" min="1" max="60" step="1" value="8" />
+        </div>
+
+        <div class="control-row">
+          <label for="progressSlider">
+            <span>滑动进度</span>
+            <small id="progressText">1 / 1</small>
+          </label>
+          <input id="progressSlider" type="range" min="0" max="0" step="1" value="0" />
+          <div class="buttons">
+            <button id="prevBtn">Prev</button>
+            <button id="playBtn" class="primary">Play</button>
+            <button id="nextBtn">Next</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="block">
+        <h2>图层说明</h2>
+        <div class="legend-list" id="legendList"></div>
+      </div>
+
+      <div class="block">
+        <h2>当前位置</h2>
+        <div class="meta" id="metaPanel"></div>
+      </div>
+
+      <div class="block">
+        <h2>各层真实覆盖统计</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Layer</th>
+                <th>Rows</th>
+                <th>Cols</th>
+                <th>Touched</th>
+                <th>Full</th>
+                <th>Edge Cut</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+        <div class="note">
+          统计口径：只要 Cell 与 Mask 物理窗口有正面积交集，就计入 <b>Touched</b>。
+          <b>Full</b> 是完整落入窗口内部的 Cell 数。<b>Edge Cut</b> 表示窗口边缘没有对齐到该层 Cell 边界，因此存在部分切过的 Cell。
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const GRID = 121;
+    const DX4 = 1.0;
+    const EPS = 1e-9;
+
+    const layers = [
+      { name: "L1", dx: DX4 / 8, color: "#1d4ed8", fill: "rgba(29, 78, 216, 0.05)" },
+      { name: "L2", dx: DX4 / 4, color: "#0891b2", fill: "rgba(8, 145, 178, 0.05)" },
+      { name: "L3", dx: DX4 / 2, color: "#16a34a", fill: "rgba(22, 163, 74, 0.05)" },
+      { name: "L4", dx: DX4,     color: "#ea580c", fill: "rgba(234, 88, 12, 0.04)" }
+    ];
+
+    const canvas = document.getElementById("viz");
+    const ctx = canvas.getContext("2d");
+
+    const nSlider = document.getElementById("nSlider");
+    const dSlider = document.getElementById("dSlider");
+    const progressSlider = document.getElementById("progressSlider");
+
+    const nValue = document.getElementById("nValue");
+    const nValue2 = document.getElementById("nValue2");
+    const dValue = document.getElementById("dValue");
+    const progressText = document.getElementById("progressText");
+
+    const prevBtn = document.getElementById("prevBtn");
+    const playBtn = document.getElementById("playBtn");
+    const nextBtn = document.getElementById("nextBtn");
+
+    const metaPanel = document.getElementById("metaPanel");
+    const tbody = document.getElementById("tbody");
+    const legendList = document.getElementById("legendList");
+
+    const state = {
+      N: Number(nSlider.value),
+      D: Number(dSlider.value),
+      starts: [],
+      positions: [],
+      index: 0,
+      playing: false,
+      timer: null
+    };
+
+    const world = {
+      pad: 88,
+      extentL4: GRID * DX4,
+      xMin: -(GRID * DX4) / 2,
+      xMax: +(GRID * DX4) / 2,
+      yMin: -(GRID * DX4) / 2,
+      yMax: +(GRID * DX4) / 2
+    };
+
+    const ppu = Math.min(
+      (canvas.width - 2 * world.pad) / (world.xMax - world.xMin),
+      (canvas.height - 2 * world.pad) / (world.yMax - world.yMin)
+    );
+
+    function extent(dx) {
+      return GRID * dx;
+    }
+
+    function worldToX(x) {
+      return world.pad + (x - world.xMin) * ppu;
+    }
+
+    function worldToY(y) {
+      return canvas.height - world.pad - (y - world.yMin) * ppu;
+    }
+
+    function axisStarts(N, D) {
+      const out = [];
+      const end = GRID - N;
+      for (let s = 0; s <= end; s += D) out.push(s);
+      if (out.length === 0 || out[out.length - 1] !== end) out.push(end);
+      return out;
+    }
+
+    function buildPositions(N, D) {
+      const starts = axisStarts(N, D);
+      const positions = [];
+      for (let ri = 0; ri < starts.length; ri++) {
+        for (let ci = 0; ci < starts.length; ci++) {
+          positions.push({
+            row: starts[ri],
+            col: starts[ci],
+            rowStep: ri,
+            colStep: ci
+          });
+        }
+      }
+      return { starts, positions };
+    }
+
+    function currentMask() {
+      const p = state.positions[state.index];
+      const x0 = world.xMin + p.col * DX4;
+      const x1 = world.xMin + (p.col + state.N) * DX4;
+      const y1 = world.yMax - p.row * DX4;
+      const y0 = world.yMax - (p.row + state.N) * DX4;
+
+      return {
+        row0: p.row,
+        row1: p.row + state.N - 1,
+        col0: p.col,
+        col1: p.col + state.N - 1,
+        rowStep: p.rowStep,
+        colStep: p.colStep,
+        x0, x1, y0, y1,
+        w: x1 - x0,
+        h: y1 - y0
+      };
+    }
+
+    function approxInt(v) {
+      return Math.abs(v - Math.round(v)) < EPS;
+    }
+
+    function coverage(layer, mask) {
+      const ex = extent(layer.dx);
+      const xMin = -ex / 2;
+      const xMax = +ex / 2;
+      const yMin = -ex / 2;
+      const yMax = +ex / 2;
+
+      const overlapX0 = Math.max(mask.x0, xMin);
+      const overlapX1 = Math.min(mask.x1, xMax);
+      const overlapY0 = Math.max(mask.y0, yMin);
+      const overlapY1 = Math.min(mask.y1, yMax);
+
+      if (overlapX1 <= overlapX0 + EPS || overlapY1 <= overlapY0 + EPS) {
+        return {
+          name: layer.name,
+          dx: layer.dx,
+          touchedCount: 0,
+          fullCount: 0,
+          rowStart: null,
+          rowEnd: null,
+          colStart: null,
+          colEnd: null,
+          touchedRows: 0,
+          touchedCols: 0,
+          fullRows: 0,
+          fullCols: 0,
+          edgeCut: false,
+          hasTouch: false
+        };
+      }
+
+      const touchedCols = [];
+      const fullCols = [];
+      const touchedRows = [];
+      const fullRows = [];
+
+      for (let c = 0; c < GRID; c++) {
+        const cx0 = xMin + c * layer.dx;
+        const cx1 = cx0 + layer.dx;
+        if (cx1 > overlapX0 + EPS && cx0 < overlapX1 - EPS) touchedCols.push(c);
+        if (cx0 >= overlapX0 - EPS && cx1 <= overlapX1 + EPS) fullCols.push(c);
+      }
+
+      for (let r = 0; r < GRID; r++) {
+        const cy1 = yMax - r * layer.dx;
+        const cy0 = cy1 - layer.dx;
+        if (cy1 > overlapY0 + EPS && cy0 < overlapY1 - EPS) touchedRows.push(r);
+        if (cy0 >= overlapY0 - EPS && cy1 <= overlapY1 + EPS) fullRows.push(r);
+      }
+
+      const aligned =
+        approxInt((overlapX0 - xMin) / layer.dx) &&
+        approxInt((overlapX1 - xMin) / layer.dx) &&
+        approxInt((yMax - overlapY0) / layer.dx) &&
+        approxInt((yMax - overlapY1) / layer.dx);
+
+      return {
+        name: layer.name,
+        dx: layer.dx,
+        touchedCount: touchedRows.length * touchedCols.length,
+        fullCount: fullRows.length * fullCols.length,
+        rowStart: touchedRows[0],
+        rowEnd: touchedRows[touchedRows.length - 1],
+        colStart: touchedCols[0],
+        colEnd: touchedCols[touchedCols.length - 1],
+        touchedRows: touchedRows.length,
+        touchedCols: touchedCols.length,
+        fullRows: fullRows.length,
+        fullCols: fullCols.length,
+        edgeCut: !aligned,
+        hasTouch: true
+      };
+    }
+
+    function formatNum(v) {
+      return Number(v.toFixed(3)).toString();
+    }
+
+    function drawBackground() {
+      const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      g.addColorStop(0, "#fcfefe");
+      g.addColorStop(1, "#f7fafc");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      ctx.strokeStyle = "rgba(100, 116, 139, 0.08)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= canvas.width; x += 36) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= canvas.height; y += 36) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawAxis() {
+      ctx.save();
+      ctx.strokeStyle = "rgba(71, 85, 105, 0.5)";
+      ctx.setLineDash([6, 6]);
+      ctx.lineWidth = 1.2;
+
+      const cx = worldToX(0);
+      const cy = worldToY(0);
+
+      ctx.beginPath();
+      ctx.moveTo(worldToX(world.xMin), cy);
+      ctx.lineTo(worldToX(world.xMax), cy);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(cx, worldToY(world.yMin));
+      ctx.lineTo(cx, worldToY(world.yMax));
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#475569";
+      ctx.font = "12px Segoe UI, sans-serif";
+      ctx.fillText("center", cx + 8, cy - 8);
+      ctx.restore();
+    }
+
+    function drawLayer(layer) {
+      const ex = extent(layer.dx);
+      const x0 = -ex / 2;
+      const x1 = +ex / 2;
+      const y0 = -ex / 2;
+      const y1 = +ex / 2;
+
+      const px0 = worldToX(x0);
+      const px1 = worldToX(x1);
+      const py0 = worldToY(y0);
+      const py1 = worldToY(y1);
+
+      const w = px1 - px0;
+      const h = py0 - py1;
+
+      ctx.save();
+      ctx.fillStyle = layer.fill;
+      ctx.strokeStyle = layer.color;
+      ctx.lineWidth = 2.4;
+      ctx.fillRect(px0, py1, w, h);
+      ctx.strokeRect(px0, py1, w, h);
+
+      const cellPx = layer.dx * ppu;
+      const skip = Math.max(1, Math.ceil(5 / Math.max(cellPx, 0.01)));
+
+      ctx.globalAlpha = 0.28;
+      ctx.lineWidth = 1;
+
+      for (let i = 0; i <= GRID; i += skip) {
+        const xx = worldToX(x0 + i * layer.dx);
+        ctx.beginPath();
+        ctx.moveTo(xx, py1);
+        ctx.lineTo(xx, py0);
+        ctx.stroke();
+      }
+
+      for (let i = 0; i <= GRID; i += skip) {
+        const yy = worldToY(y1 - i * layer.dx);
+        ctx.beginPath();
+        ctx.moveTo(px0, yy);
+        ctx.lineTo(px1, yy);
+        ctx.stroke();
+      }
+
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = layer.color;
+      ctx.font = "bold 13px Segoe UI, sans-serif";
+      ctx.fillText(
+        `${layer.name}  span=${formatNum(ex)}  dx=${formatNum(layer.dx)}`,
+        px1 + 10,
+        py1 + 16
+      );
+
+      ctx.restore();
+    }
+
+    function drawMask(mask) {
+      const px = worldToX(mask.x0);
+      const py = worldToY(mask.y1);
+      const pw = mask.w * ppu;
+      const ph = mask.h * ppu;
+
+      ctx.save();
+      ctx.fillStyle = "rgba(220, 38, 38, 0.20)";
+      ctx.strokeStyle = "rgba(185, 28, 28, 0.95)";
+      ctx.lineWidth = 2.6;
+      ctx.fillRect(px, py, pw, ph);
+      ctx.setLineDash([9, 6]);
+      ctx.strokeRect(px, py, pw, ph);
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = "#7f1d1d";
+      ctx.font = "bold 13px Segoe UI, sans-serif";
+      ctx.fillText(`Mask (L4: rows ${mask.row0}-${mask.row1}, cols ${mask.col0}-${mask.col1})`, px + 8, py - 10);
+
+      ctx.restore();
+    }
+
+    function drawCornerHints() {
+      ctx.save();
+      ctx.fillStyle = "#64748b";
+      ctx.font = "12px Segoe UI, sans-serif";
+      ctx.fillText("top-left", worldToX(world.xMin) - 2, worldToY(world.yMax) - 8);
+      ctx.fillText("bottom-right", worldToX(world.xMax) - 78, worldToY(world.yMin) + 20);
+      ctx.restore();
+    }
+
+    function drawScaleBar() {
+      const x = 48;
+      const y = canvas.height - 42;
+      const lenWorld = 20;
+      const lenPx = lenWorld * ppu;
+
+      ctx.save();
+      ctx.strokeStyle = "#334155";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + lenPx, y);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(x, y - 5);
+      ctx.lineTo(x, y + 5);
+      ctx.moveTo(x + lenPx, y - 5);
+      ctx.lineTo(x + lenPx, y + 5);
+      ctx.stroke();
+
+      ctx.fillStyle = "#334155";
+      ctx.font = "12px Segoe UI, sans-serif";
+      ctx.fillText(`physical length = ${lenWorld} (in L4 dx units)`, x, y - 10);
+      ctx.restore();
+    }
+
+    function renderLegend() {
+      legendList.innerHTML = "";
+      layers.forEach(layer => {
+        const item = document.createElement("div");
+        item.className = "legend-item";
+        item.style.color = layer.color;
+        item.innerHTML = `
+          <span class="swatch"></span>
+          <span>${layer.name}: 121 × 121, dx = ${formatNum(layer.dx)}, span = ${formatNum(extent(layer.dx))}</span>
+        `;
+        legendList.appendChild(item);
+      });
+
+      const maskItem = document.createElement("div");
+      maskItem.className = "legend-item";
+      maskItem.style.color = "#b91c1c";
+      maskItem.innerHTML = `
+        <span class="swatch" style="background: rgba(220,38,38,0.18);"></span>
+        <span>Mask: 在 L4 上定义的真实物理窗口</span>
+      `;
+      legendList.appendChild(maskItem);
+    }
+
+    function renderMeta(mask, covs) {
+      const pos = state.positions[state.index];
+      const startList = state.starts.length <= 10
+        ? state.starts.join(", ")
+        : `${state.starts.slice(0, 5).join(", ")} ... ${state.starts.slice(-3).join(", ")}`;
+
+      const l4 = covs.find(x => x.name === "L4");
+
+      metaPanel.innerHTML = `
+        <div class="meta-card">
+          <div class="meta-key">L4 索引窗口</div>
+          <div>Rows <b>[${mask.row0}, ${mask.row1}]</b>, Cols <b>[${mask.col0}, ${mask.col1}]</b></div>
+        </div>
+        <div class="meta-card">
+          <div class="meta-key">物理边界</div>
+          <div>x = [${formatNum(mask.x0)}, ${formatNum(mask.x1)}], y = [${formatNum(mask.y0)}, ${formatNum(mask.y1)}]</div>
+        </div>
+        <div class="meta-card">
+          <div class="meta-key">扫描位置</div>
+          <div>global ${state.index + 1} / ${state.positions.length}; row-step ${pos.rowStep + 1} / ${state.starts.length}; col-step ${pos.colStep + 1} / ${state.starts.length}</div>
+        </div>
+        <div class="meta-card">
+          <div class="meta-key">L4 起点序列</div>
+          <div>${startList}</div>
+        </div>
+        <div class="meta-card">
+          <div class="meta-key">L4 对齐情况</div>
+          <div>Touched = ${l4.touchedCount}, Full = ${l4.fullCount}, Edge Cut = ${l4.edgeCut ? "Yes" : "No"}</div>
+        </div>
+      `;
+    }
+
+    function renderTable(covs) {
+      tbody.innerHTML = "";
+      covs.forEach(c => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><code>${c.name}</code></td>
+          <td>${c.hasTouch ? `[${c.rowStart}, ${c.rowEnd}] (${c.touchedRows})` : "none"}</td>
+          <td>${c.hasTouch ? `[${c.colStart}, ${c.colEnd}] (${c.touchedCols})` : "none"}</td>
+          <td>${c.touchedCount}</td>
+          <td>${c.fullCount}</td>
+          <td>${c.hasTouch ? (c.edgeCut ? "Yes" : "No") : "-"}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function draw() {
+      const mask = currentMask();
+      const covs = layers.map(layer => coverage(layer, mask));
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawBackground();
+      drawAxis();
+
+      for (let i = layers.length - 1; i >= 0; i--) {
+        drawLayer(layers[i]);
+      }
+
+      drawMask(mask);
+      drawCornerHints();
+      drawScaleBar();
+
+      renderMeta(mask, covs);
+      renderTable(covs);
+    }
+
+    function rebuild() {
+      state.N = Number(nSlider.value);
+      state.D = Number(dSlider.value);
+
+      const built = buildPositions(state.N, state.D);
+      state.starts = built.starts;
+      state.positions = built.positions;
+      state.index = Math.min(state.index, state.positions.length - 1);
+
+      nValue.textContent = state.N;
+      nValue2.textContent = state.N;
+      dValue.textContent = state.D;
+
+      progressSlider.max = String(Math.max(0, state.positions.length - 1));
+      progressSlider.value = String(state.index);
+      progressText.textContent = `${state.index + 1} / ${state.positions.length}`;
+
+      draw();
+    }
+
+    function setIndex(i) {
+      state.index = Math.max(0, Math.min(i, state.positions.length - 1));
+      progressSlider.value = String(state.index);
+      progressText.textContent = `${state.index + 1} / ${state.positions.length}`;
+      draw();
+    }
+
+    function stopPlay() {
+      state.playing = false;
+      playBtn.textContent = "Play";
+      if (state.timer) {
+        clearInterval(state.timer);
+        state.timer = null;
+      }
+    }
+
+    function startPlay() {
+      if (state.positions.length <= 1) return;
+      state.playing = true;
+      playBtn.textContent = "Pause";
+      state.timer = setInterval(() => {
+        if (state.index >= state.positions.length - 1) {
+          stopPlay();
+          return;
+        }
+        setIndex(state.index + 1);
+      }, 380);
+    }
+
+    nSlider.addEventListener("input", () => {
+      stopPlay();
+      rebuild();
+    });
+
+    dSlider.addEventListener("input", () => {
+      stopPlay();
+      rebuild();
+    });
+
+    progressSlider.addEventListener("input", e => {
+      stopPlay();
+      setIndex(Number(e.target.value));
+    });
+
+    prevBtn.addEventListener("click", () => {
+      stopPlay();
+      setIndex(state.index - 1);
+    });
+
+    nextBtn.addEventListener("click", () => {
+      stopPlay();
+      setIndex(state.index + 1);
+    });
+
+    playBtn.addEventListener("click", () => {
+      if (state.playing) stopPlay();
+      else startPlay();
+    });
+
+    renderLegend();
+    rebuild();
+  </script>
+</body>
+</html>

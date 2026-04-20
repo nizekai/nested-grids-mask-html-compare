@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>嵌套网格与物理遮罩滑动演示</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Noto+Sans+SC:wght@300;400;700;900&display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b1120;--fg:#e2e8f3;--muted:#6b7a94;--accent:#f5a623;
+  --card:#111b30;--card2:#0f1728;--border:#1e2d4a;
+  --L4:#10b981;--L3:#06b6d4;--L2:#f59e0b;--L1:#ef4444;
+  --mask:#fbbf24;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:'Noto Sans SC',sans-serif;overflow:hidden;height:100vh}
+.app{display:flex;height:100vh}
+
+/* 左侧画布区域 */
+.canvas-area{flex:1;display:flex;flex-direction:column;position:relative;
+  background:radial-gradient(ellipse at 40% 50%,#111d36 0%,var(--bg) 70%)}
+.canvas-header{padding:16px 24px 0;display:flex;align-items:baseline;gap:12px}
+.canvas-header h2{font-size:15px;font-weight:700;color:var(--fg);letter-spacing:.04em}
+.canvas-header span{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+.canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:12px}
+#mainCanvas{border-radius:10px;border:1px solid var(--border);background:#080e1c;
+  box-shadow:0 0 60px rgba(6,182,212,.06),0 0 120px rgba(245,166,35,.04)}
+
+/* 图例 */
+.legend{position:absolute;bottom:20px;left:24px;display:flex;gap:16px;font-size:11px;font-family:'JetBrains Mono',monospace}
+.legend-item{display:flex;align-items:center;gap:5px}
+.legend-dot{width:10px;height:10px;border-radius:2px}
+
+/* 右侧面板 */
+.panel{width:430px;background:var(--card);border-left:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden}
+.panel-scroll{flex:1;overflow-y:auto;padding:20px 22px 30px}
+.panel-scroll::-webkit-scrollbar{width:4px}
+.panel-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+.panel-title{font-size:22px;font-weight:900;letter-spacing:.02em;line-height:1.3}
+.panel-sub{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5}
+
+.section{margin-top:22px}
+.section-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.1em;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.section-title i{font-size:10px;color:var(--accent)}
+
+/* 参数控制 */
+.param-card{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.param-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.param-row:last-child{margin-bottom:0}
+.param-label{font-size:12px;font-weight:600;min-width:90px;color:var(--fg)}
+.param-val{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;
+  color:var(--accent);min-width:30px;text-align:right}
+input[type=range]{flex:1;height:4px;-webkit-appearance:none;appearance:none;background:var(--border);
+  border-radius:2px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;
+  border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 0 8px rgba(245,166,35,.4)}
+
+/* 播放控制 */
+.play-bar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.btn-icon{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);
+  background:var(--card2);color:var(--fg);cursor:pointer;display:flex;align-items:center;
+  justify-content:center;font-size:13px;transition:all .15s}
+.btn-icon:hover{border-color:var(--accent);color:var(--accent);background:rgba(245,166,35,.08)}
+.btn-icon.active{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.step-label{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-left:auto}
+.pos-info{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-top:6px}
+
+/* 层级结果卡片 */
+.layer-card{border-left:3px solid;border-radius:0 8px 8px 0;padding:12px 14px;
+  margin-bottom:8px;background:var(--card2);transition:box-shadow .2s}
+.layer-card:hover{box-shadow:0 0 16px rgba(255,255,255,.03)}
+.layer-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.layer-name{font-size:14px;font-weight:700}
+.layer-count{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:900}
+.layer-detail{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);line-height:1.8}
+.layer-detail .val{color:var(--fg);font-weight:600}
+
+/* 缩放视图 */
+.zoom-wrap{margin-top:16px;background:var(--card2);border:1px solid var(--border);border-radius:10px;
+  padding:12px;position:relative}
+.zoom-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.08em;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.zoom-title i{color:var(--accent);font-size:10px}
+#zoomCanvas{width:100%;border-radius:6px;background:#060c18}
+
+/* 公式提示 */
+.formula-hint{margin-top:14px;padding:10px 12px;background:rgba(245,166,35,.06);
+  border:1px solid rgba(245,166,35,.15);border-radius:8px;font-size:11px;
+  font-family:'JetBrains Mono',monospace;color:var(--muted);line-height:1.7}
+.formula-hint .hl{color:var(--accent);font-weight:600}
+
+/* 动画 */
+@keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}
+.pulse{animation:pulse 2s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.pulse{animation:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- 左侧画布 -->
+  <div class="canvas-area">
+    <div class="canvas-header">
+      <h2>嵌套网格物理视图</h2>
+      <span>4-Layer Nested Grid · 121 x 121 Cells</span>
+    </div>
+    <div class="canvas-wrap">
+      <canvas id="mainCanvas"></canvas>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:var(--L4)"></div>L4 (dx=1)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--L3)"></div>L3 (dx=0.5)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--L2)"></div>L2 (dx=0.25)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--L1)"></div>L1 (dx=0.125)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--mask)"></div>Mask</div>
+    </div>
+  </div>
+
+  <!-- 右侧面板 -->
+  <aside class="panel">
+    <div class="panel-scroll">
+      <div class="panel-title">嵌套网格 &<br>物理遮罩</div>
+      <div class="panel-sub">演示不同分辨率网格层与滑动 Mask 窗口的物理空间对应关系。4 层网格共享中心，由外向内分辨率逐层翻倍。</div>
+
+      <!-- 参数控制 -->
+      <div class="section">
+        <div class="section-title"><i class="fas fa-sliders-h"></i> 遮罩参数</div>
+        <div class="param-card">
+          <div class="param-row">
+            <span class="param-label">N (窗口大小)</span>
+            <span class="param-val" id="nVal">20</span>
+            <input type="range" id="nSlider" min="2" max="60" value="20">
+          </div>
+          <div class="param-row">
+            <span class="param-label">D (滑动步长)</span>
+            <span class="param-val" id="dVal">5</span>
+            <input type="range" id="dSlider" min="1" max="30" value="5">
+          </div>
+          <div class="param-row">
+            <span class="param-label">速度 (ms/步)</span>
+            <span class="param-val" id="spdVal">200</span>
+            <input type="range" id="spdSlider" min="50" max="800" value="200" step="50">
+          </div>
+        </div>
+      </div>
+
+      <!-- 滑动控制 -->
+      <div class="section">
+        <div class="section-title"><i class="fas fa-play-circle"></i> 滑动控制</div>
+        <div class="play-bar">
+          <button class="btn-icon" id="playBtn" title="播放/暂停"><i class="fas fa-play"></i></button>
+          <button class="btn-icon" id="resetBtn" title="重置"><i class="fas fa-undo"></i></button>
+          <button class="btn-icon" id="stepBtn" title="单步前进"><i class="fas fa-step-forward"></i></button>
+          <span class="step-label" id="stepLabel">0 / 0</span>
+        </div>
+        <input type="range" id="progressSlider" min="0" max="0" value="0">
+        <div class="pos-info" id="posInfo">Mask 位置: (row=0, col=0)</div>
+      </div>
+
+      <!-- 遮盖分析结果 -->
+      <div class="section">
+        <div class="section-title"><i class="fas fa-th"></i> 遮盖分析</div>
+        <div id="layerResults"></div>
+      </div>
+
+      <!-- 缩放视图 -->
+      <div class="section">
+        <div class="zoom-title"><i class="fas fa-search-plus"></i> Mask 区域放大视图</div>
+        <div class="zoom-wrap">
+          <canvas id="zoomCanvas" height="260"></canvas>
+        </div>
+      </div>
+
+      <!-- 公式提示 -->
+      <div class="formula-hint">
+        遮盖规律：当 Mask 完全落在某层物理范围内时，<br>
+        该层每维被遮盖 Cell 数 = <span class="hl">factor × N + 1</span><br>
+        其中 factor: L4=1, L3=2, L2=4, L1=8<br>
+        总量 = <span class="hl">(factor×N+1)²</span>（边界不对齐导致+1）
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script>
+/* ==================== 核心常量 ==================== */
+const CELLS = 121;
+const HALF = 60.5; // (CELLS - 1) / 2 + 0.5
+
+/* 层级定义：从外到内 */
+const LAYERS = [
+  { name:'L4', color:'#10b981', light:'rgba(16,185,129,0.12)', cs:1,     factor:1 },
+  { name:'L3', color:'#06b6d4', light:'rgba(6,182,212,0.12)',  cs:0.5,   factor:2 },
+  { name:'L2', color:'#f59e0b', light:'rgba(245,158,11,0.12)', cs:0.25,  factor:4 },
+  { name:'L1', color:'#ef4444', light:'rgba(239,68,68,0.12)',  cs:0.125, factor:8 }
+];
+
+/* ==================== 状态 ==================== */
+let maskN = 20;
+let stepD = 5;
+let curStep = 0;
+let playing = false;
+let playTimer = null;
+let speed = 200;
+
+/* ==================== 计算函数 ==================== */
+
+/** 获取 Mask 滑动的总步数和每步位置 */
+function getSliderInfo() {
+  const maxStart = CELLS - maskN;
+  const colSteps = Math.floor(maxStart / stepD) + 1;
+  const rowSteps = Math.floor(maxStart / stepD) + 1;
+  return { colSteps, rowSteps, totalSteps: colSteps * rowSteps, maxStart };
+}
+
+/** 给定 step 编号，返回 Mask 左上角的 (row, col) */
+function getMaskPos(step) {
+  const { colSteps } = getSliderInfo();
+  const r = Math.floor(step / colSteps) * stepD;
+  const c = (step % colSteps) * stepD;
+  return { row: Math.min(r, CELLS - maskN), col: Math.min(c, CELLS - maskN) };
+}
+
+/** 计算某层被 Mask 遮盖的 cell 索引范围（二分搜索，精确处理边界） */
+function getCovered(layer, maskRow, maskCol, N) {
+  const cs = layer.cs;
+  /* Mask 的物理范围（以 L4 cell size 为 1 的坐标系） */
+  const mxMin = maskCol - HALF;
+  const mxMax = maskCol + N - HALF;
+  const myMin = maskRow - HALF;
+  const myMax = maskRow + N - HALF;
+
+  /* 该层 cell j 的物理 x 范围：[(j-HALF)*cs, (j+1-HALF)*cs]
+     有交集 ⟺ cell右界 > mask左界 AND cell左界 < mask右界 */
+
+  function findRange(maskMin, maskMax) {
+    // 找第一个 j 使得 (j+1-HALF)*cs > maskMin
+    let lo = 0, hi = CELLS - 1, first = CELLS;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if ((mid + 1 - HALF) * cs > maskMin) { first = mid; hi = mid - 1; }
+      else lo = mid + 1;
+    }
+    // 找最后一个 j 使得 (j-HALF)*cs < maskMax
+    lo = 0; hi = CELLS - 1;
+    let last = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if ((mid - HALF) * cs < maskMax) { last = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    if (first > last) return { min: -1, max: -1, count: 0 };
+    return { min: first, max: last, count: last - first + 1 };
+  }
+
+  const rr = findRange(myMin, myMax);
+  const cr = findRange(mxMin, mxMax);
+  return {
+    rowMin: rr.min, rowMax: rr.max, rowCount: rr.count,
+    colMin: cr.min, colMax: cr.max, colCount: cr.count,
+    total: rr.count * cr.count
+  };
+}
+
+/* ==================== 画布绘制 ==================== */
+
+const mainCanvas = document.getElementById('mainCanvas');
+const mainCtx = mainCanvas.getContext('2d');
+const zoomCanvas = document.getElementById('zoomCanvas');
+const zoomCtx = zoomCanvas.getContext('2d');
+
+let canvasSize = 600;
+const PAD = 50;
+
+function initCanvasSize() {
+  const area = document.querySelector('.canvas-wrap');
+  const s = Math.min(area.clientWidth - 24, area.clientHeight - 24, 680);
+  canvasSize = Math.max(400, s);
+  mainCanvas.width = canvasSize * devicePixelRatio;
+  mainCanvas.height = canvasSize * devicePixelRatio;
+  mainCanvas.style.width = canvasSize + 'px';
+  mainCanvas.style.height = canvasSize + 'px';
+  mainCtx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+
+  const zw = zoomCanvas.parentElement.clientWidth - 24;
+  zoomCanvas.width = zw * devicePixelRatio;
+  zoomCanvas.height = 260 * devicePixelRatio;
+  zoomCanvas.style.width = zw + 'px';
+  zoomCanvas.style.height = '260px';
+  zoomCtx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+
+/** 物理坐标 → 画布像素 */
+function p2c(px, py) {
+  const draw = canvasSize - 2 * PAD;
+  return [PAD + (px + HALF) / CELLS * draw, PAD + (py + HALF) / CELLS * draw];
+}
+
+/** 绘制主画布 */
+function drawMain() {
+  const ctx = mainCtx;
+  const W = canvasSize, H = canvasSize;
+  const draw = W - 2 * PAD;
+  const scale = draw / CELLS;
+
+  ctx.clearRect(0, 0, W, H);
+
+  /* 背景微网格（L4 参考线，每10个cell） */
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= CELLS; i += 10) {
+    const [x1, y1] = p2c(i - HALF, -HALF);
+    const [x2, y2] = p2c(i - HALF, HALF);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    const [x3, y3] = p2c(-HALF, i - HALF);
+    const [x4, y4] = p2c(HALF, i - HALF);
+    ctx.beginPath(); ctx.moveTo(x3, y3); ctx.lineTo(x4, y4); ctx.stroke();
+  }
+
+  const pos = getMaskPos(curStep);
+
+  /* 各层遮盖高亮 + 边界 */
+  for (const layer of LAYERS) {
+    const cov = getCovered(layer, pos.row, pos.col, maskN);
+    const cs = layer.cs;
+    const hr = HALF * cs; // 该层物理半范围
+
+    /* 层边界矩形 */
+    const [bx1, by1] = p2c(-hr, -hr);
+    const [bx2, by2] = p2c(hr, hr);
+    ctx.strokeStyle = layer.color;
+    ctx.lineWidth = layer.factor === 1 ? 2 : 1.5;
+    ctx.globalAlpha = 0.7;
+    ctx.strokeRect(bx1, by1, bx2 - bx1, by2 - by1);
+    ctx.globalAlpha = 1;
+
+    /* 层名称标注 */
+    ctx.font = '600 11px "JetBrains Mono"';
+    ctx.fillStyle = layer.color;
+    ctx.globalAlpha = 0.9;
+    ctx.fillText(layer.name + ' (dx=' + cs + ')', bx1 + 4, by1 - 4);
+    ctx.globalAlpha = 1;
+
+    /* 被遮盖区域高亮 */
+    if (cov.total > 0) {
+      const covXMin = (cov.colMin - HALF) * cs;
+      const covYMin = (cov.rowMin - HALF) * cs;
+      const covXMax = (cov.colMax + 1 - HALF) * cs;
+      const covYMax = (cov.rowMax + 1 - HALF) * cs;
+      const [cx1, cy1] = p2c(covXMin, covYMin);
+      const [cx2, cy2] = p2c(covXMax, covYMax);
+      ctx.fillStyle = layer.light;
+      ctx.fillRect(cx1, cy1, cx2 - cx1, cy2 - cy1);
+      ctx.strokeStyle = layer.color;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.5;
+      ctx.setLineDash([3, 3]);
+      ctx.strokeRect(cx1, cy1, cx2 - cx1, cy2 - cy1);
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  /* 中心十字 */
+  const [ccx, ccy] = p2c(0, 0);
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(PAD, ccy); ctx.lineTo(PAD + draw, ccy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ccx, PAD); ctx.lineTo(ccx, PAD + draw); ctx.stroke();
+  ctx.setLineDash([]);
+
+  /* Mask 窗口 */
+  const maskXMin = pos.col - HALF;
+  const maskYMin = pos.row - HALF;
+  const maskXMax = pos.col + maskN - HALF;
+  const maskYMax = pos.row + maskN - HALF;
+  const [mx1, my1] = p2c(maskXMin, maskYMin);
+  const [mx2, my2] = p2c(maskXMax, maskYMax);
+
+  /* Mask 半透明填充 */
+  const t = Date.now() / 1000;
+  const alpha = 0.15 + 0.05 * Math.sin(t * 3);
+  ctx.fillStyle = `rgba(251,191,36,${alpha.toFixed(3)})`;
+  ctx.fillRect(mx1, my1, mx2 - mx1, my2 - my1);
+
+  /* Mask 边框 */
+  ctx.strokeStyle = '#fbbf24';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(mx1, my1, mx2 - mx1, my2 - my1);
+
+  /* Mask 角标 */
+  const cornerLen = 8;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#fbbf24';
+  [[mx1,my1,1,1],[mx2,my1,-1,1],[mx1,my2,1,-1],[mx2,my2,-1,-1]].forEach(([x,y,dx,dy]) => {
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx * cornerLen, y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + dy * cornerLen); ctx.stroke();
+  });
+
+  /* Mask 标注 */
+  ctx.font = '700 11px "JetBrains Mono"';
+  ctx.fillStyle = '#fbbf24';
+  const labelX = mx1 + (mx2 - mx1) / 2;
+  ctx.textAlign = 'center';
+  ctx.fillText(`${maskN}×${maskN}`, labelX, my1 - 6);
+  ctx.textAlign = 'left';
+
+  /* 坐标轴标注 */
+  ctx.font = '300 9px "JetBrains Mono"';
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.textAlign = 'center';
+  for (let v = -60; v <= 60; v += 20) {
+    const [lx, ly] = p2c(v, -HALF);
+    ctx.fillText(v.toString(), lx, PAD + draw + 14);
+    const [lx2, ly2] = p2c(-HALF, v);
+    ctx.fillText(v.toString(), PAD - 18, ly2 + 3);
+  }
+  ctx.textAlign = 'left';
+}
+
+/** 绘制缩放视图 */
+function drawZoom() {
+  const ctx = zoomCtx;
+  const W = zoomCanvas.width / devicePixelRatio;
+  const H = zoomCanvas.height / devicePixelRatio;
+  ctx.clearRect(0, 0, W, H);
+
+  const pos = getMaskPos(curStep);
+  /* Mask 的物理范围 */
+  const mxMin = pos.col - HALF;
+  const mxMax = pos.col + maskN - HALF;
+  const myMin = pos.row - HALF;
+  const myMax = pos.row + maskN - HALF;
+  const mw = mxMax - mxMin;
+  const mh = myMax - myMin;
+
+  const pad = 8;
+  const drawW = W - 2 * pad;
+  const drawH = H - 2 * pad;
+  const sc = Math.min(drawW / mw, drawH / mh);
+  const offX = pad + (drawW - mw * sc) / 2;
+  const offY = pad + (drawH - mh * sc) / 2;
+
+  function z2c(px, py) {
+    return [offX + (px - mxMin) * sc, offY + (py - myMin) * sc];
+  }
+
+  /* 从内到外绘制各层网格 */
+  for (let li = LAYERS.length - 1; li >= 0; li--) {
+    const layer = LAYERS[li];
+    const cs = layer.cs;
+    const cov = getCovered(layer, pos.row, pos.col, maskN);
+    if (cov.total === 0) continue;
+
+    /* 该层被遮盖区域背景 */
+    const hr = HALF * cs;
+    const lxMin = Math.max(-hr, mxMin);
+    const lyMin = Math.max(-hr, myMin);
+    const lxMax = Math.min(hr, mxMax);
+    const lyMax = Math.min(hr, myMax);
+    const [zx1, zy1] = z2c(lxMin, lyMin);
+    const [zx2, zy2] = z2c(lxMax, lyMax);
+    ctx.fillStyle = layer.light;
+    ctx.fillRect(zx1, zy1, zx2 - zx1, zy2 - zy1);
+
+    /* 该层的网格线（被遮盖范围内） */
+    ctx.strokeStyle = layer.color;
+    ctx.globalAlpha = li === 0 ? 0.3 : 0.2;
+    ctx.lineWidth = 0.5;
+
+    /* 竖线 */
+    for (let j = cov.colMin; j <= cov.colMax + 1; j++) {
+      const px = (j - HALF) * cs;
+      const pyTop = Math.max((cov.rowMin - HALF) * cs, -hr, myMin);
+      const pyBot = Math.min((cov.rowMax + 1 - HALF) * cs, hr, myMax);
+      if (px < Math.max(-hr, mxMin) - cs || px > Math.min(hr, mxMax) + cs) continue;
+      const [x1, y1] = z2c(px, pyTop);
+      const [x2, y2] = z2c(px, pyBot);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+    /* 横线 */
+    for (let i = cov.rowMin; i <= cov.rowMax + 1; i++) {
+      const py = (i - HALF) * cs;
+      const pxLeft = Math.max((cov.colMin - HALF) * cs, -hr, mxMin);
+      const pxRight = Math.min((cov.colMax + 1 - HALF) * cs, hr, mxMax);
+      if (py < Math.max(-hr, myMin) - cs || py > Math.min(hr, myMax) + cs) continue;
+      const [x1, y1] = z2c(pxLeft, py);
+      const [x2, y2] = z2c(pxRight, py);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* Mask 边框 */
+  const [mx1, my1] = z2c(mxMin, myMin);
+  const [mx2, my2] = z2c(mxMax, myMax);
+  ctx.strokeStyle = '#fbbf24';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(mx1, my1, mx2 - mx1, my2 - my1);
+
+  /* 各层在缩放视图中的标注 */
+  ctx.font = '600 10px "JetBrains Mono"';
+  let labelY = 14;
+  for (const layer of LAYERS) {
+    const cov = getCovered(layer, pos.row, pos.col, maskN);
+    if (cov.total === 0) continue;
+    ctx.fillStyle = layer.color;
+    ctx.fillText(`${layer.name}: ${cov.colCount}×${cov.rowCount} = ${cov.total} cells`, 6, labelY);
+    labelY += 14;
+  }
+}
+
+/* ==================== UI 更新 ==================== */
+
+function updateResults() {
+  const pos = getMaskPos(curStep);
+  const container = document.getElementById('layerResults');
+  let html = '';
+
+  for (const layer of LAYERS) {
+    const cov = getCovered(layer, pos.row, pos.col, maskN);
+    const hr = (HALF * layer.cs).toFixed(3);
+    html += `
+      <div class="layer-card" style="border-color:${layer.color}">
+        <div class="layer-head">
+          <span class="layer-name" style="color:${layer.color}">${layer.name}
+            <span style="color:var(--muted);font-weight:400;font-size:11px"> · dx=${layer.cs} · 范围±${hr}</span>
+          </span>
+          <span class="layer-count" style="color:${layer.color}">${cov.total > 0 ? cov.total.toLocaleString() : '—'}</span>
+        </div>
+        <div class="layer-detail">
+          ${cov.total > 0 ? `
+          行: [<span class="val">${cov.rowMin}</span>, <span class="val">${cov.rowMax}</span>] × <span class="val">${cov.rowCount}</span> 行<br>
+          列: [<span class="val">${cov.colMin}</span>, <span class="val">${cov.colMax}</span>] × <span class="val">${cov.colCount}</span> 列<br>
+          总计: <span class="val">${cov.rowCount}</span> × <span class="val">${cov.colCount}</span> = <span class="val">${cov.total.toLocaleString()}</span> cells
+          ` : `<span style="color:var(--muted)">Mask 不在此层物理范围内</span>`}
+        </div>
+      </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function updateStepLabel() {
+  const info = getSliderInfo();
+  document.getElementById('stepLabel').textContent = `${curStep + 1} / ${info.totalSteps}`;
+  const pos = getMaskPos(curStep);
+  document.getElementById('posInfo').textContent =
+    `Mask 位置: (row=${pos.row}, col=${pos.col})  物理范围: [${(pos.col - HALF).toFixed(1)}, ${(pos.col + maskN - HALF).toFixed(1)}] × [${(pos.row - HALF).toFixed(1)}, ${(pos.row + maskN - HALF).toFixed(1)}]`;
+}
+
+function updateAll() {
+  const info = getSliderInfo();
+  const prog = document.getElementById('progressSlider');
+  prog.max = info.totalSteps - 1;
+  if (curStep >= info.totalSteps) curStep = info.totalSteps - 1;
+  prog.value = curStep;
+
+  drawMain();
+  drawZoom();
+  updateResults();
+  updateStepLabel();
+}
+
+/* ==================== 事件绑定 ==================== */
+
+document.getElementById('nSlider').addEventListener('input', function() {
+  maskN = +this.value;
+  document.getElementById('nVal').textContent = maskN;
+  curStep = 0;
+  updateAll();
+});
+
+document.getElementById('dSlider').addEventListener('input', function() {
+  stepD = +this.value;
+  document.getElementById('dVal').textContent = stepD;
+  curStep = 0;
+  updateAll();
+});
+
+document.getElementById('spdSlider').addEventListener('input', function() {
+  speed = +this.value;
+  document.getElementById('spdVal').textContent = speed;
+  if (playing) { clearInterval(playTimer); playTimer = setInterval(tick, speed); }
+});
+
+document.getElementById('progressSlider').addEventListener('input', function() {
+  curStep = +this.value;
+  updateAll();
+});
+
+document.getElementById('playBtn').addEventListener('click', function() {
+  playing = !playing;
+  this.innerHTML = playing ? '<i class="fas fa-pause"></i>' : '<i class="fas fa-play"></i>';
+  this.classList.toggle('active', playing);
+  if (playing) {
+    playTimer = setInterval(tick, speed);
+  } else {
+    clearInterval(playTimer);
+  }
+});
+
+document.getElementById('resetBtn').addEventListener('click', function() {
+  curStep = 0;
+  playing = false;
+  clearInterval(playTimer);
+  document.getElementById('playBtn').innerHTML = '<i class="fas fa-play"></i>';
+  document.getElementById('playBtn').classList.remove('active');
+  updateAll();
+});
+
+document.getElementById('stepBtn').addEventListener('click', function() {
+  const info = getSliderInfo();
+  curStep = (curStep + 1) % info.totalSteps;
+  updateAll();
+});
+
+function tick() {
+  const info = getSliderInfo();
+  curStep = (curStep + 1) % info.totalSteps;
+  updateAll();
+}
+
+/* 键盘快捷键 */
+document.addEventListener('keydown', function(e) {
+  if (e.key === ' ') {
+    e.preventDefault();
+    document.getElementById('playBtn').click();
+  } else if (e.key === 'ArrowRight') {
+    const info = getSliderInfo();
+    curStep = Math.min(curStep + 1, info.totalSteps - 1);
+    updateAll();
+  } else if (e.key === 'ArrowLeft') {
+    curStep = Math.max(curStep - 1, 0);
+    updateAll();
+  }
+});
+
+/* ==================== 动画循环（仅用于 Mask 呼吸效果） ==================== */
+let animFrame;
+function animLoop() {
+  drawMain();
+  animFrame = requestAnimationFrame(animLoop);
+}
+
+/* ==================== 初始化 ==================== */
+window.addEventListener('resize', () => { initCanvasSize(); updateAll(); });
+
+initCanvasSize();
+updateAll();
+animLoop();
+</script>
+</body>
+</html>
